@@ -2,7 +2,7 @@
 
 How Sous works, in depth.
 
-The [README](../README.md) carries the high-level diagram and a short synopsis.
+The [README](../README.md) carries the high-level overview and a short synopsis.
 This document expands every part of it.
 Sous's full operating manual for the orchestrator agent itself is [`AGENTS.md`](../AGENTS.md); this is the human-facing companion.
 
