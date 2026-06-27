@@ -108,7 +108,7 @@ Then just talk:
 ```
 
 Launching your harness from inside tmux puts every station window in your own session, where you can watch the brigade work in real time or jump into any station to intervene.
-Outside tmux, stations land in a detached `code-kitchen` session you can attach to.
+Outside tmux, stations land in a detached `firstmate` session you can attach to.
 
 ## Documentation
 
