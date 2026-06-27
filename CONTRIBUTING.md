@@ -32,10 +32,10 @@ See the [no-mistakes quick start](https://kunchenguid.github.io/no-mistakes/star
 
 ## Repo conventions
 
-- This repo is a template for running a firstmate orchestrator agent.
+- This repo is a template for running a Sous orchestrator agent.
   `AGENTS.md` is the agent's main job description and names when to load bundled skills; `CLAUDE.md` is a symlink to it, and `.claude/skills` is a symlink to `.agents/skills`.
 - Only shared material is tracked: `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, `.tasks.toml`, `.github/workflows/`, `bin/`, and `.agents/skills/`.
-  Everything personal to one captain's fleet (`data/`, `state/`, `config/`, `projects/`, `.no-mistakes/`) is gitignored; never commit it.
+  Everything personal to one Chef's brigade (`data/`, `state/`, `config/`, `projects/`, `.no-mistakes/`) is gitignored; never commit it.
   The root `.tasks.toml` is tracked `tasks-axi` config for `data/backlog.md`; compatible `tasks-axi` uses it for routine backlog mutations.
   It does not make `data/` tracked.
 - Helper scripts in `bin/` are plain bash.
@@ -47,11 +47,11 @@ See the [no-mistakes quick start](https://kunchenguid.github.io/no-mistakes/star
 
 ## Development
 
-Tracked changes to firstmate itself - `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, `.tasks.toml`, `.github/workflows/`, `bin/`, and agent skill files - ship through the `no-mistakes` pipeline on a feature branch and require an explicit merge approval.
-When supervising live crewmates, keep firstmate's own long validation or build commands in the background so watcher wakes can still be handled.
-Unlike firstmate, a crewmate owns its own validation gate loop: it processes every `no-mistakes axi run` or `no-mistakes axi respond` return, responds to gates, and never waits for a parked gate to self-resolve.
-The pipeline owns every validation fix, including auto-fix findings and fixes for real bugs found in the crewmate's own code; the crewmate authorizes or answers with `no-mistakes axi respond` instead of editing, committing, aborting, or re-running while the run is active.
-Do not use `--yes` for crewmate validation because it silently resolves `ask-user` findings without escalation.
+Tracked changes to Sous itself - `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, `.tasks.toml`, `.github/workflows/`, `bin/`, and agent skill files - go through the `no-mistakes` pipeline on a feature branch and require an explicit merge approval.
+When expediting live cooks, keep Sous's own long validation or build commands in the background so pass wakes can still be handled.
+Unlike Sous, a cook owns its own validation gate loop: it processes every `no-mistakes axi run` or `no-mistakes axi respond` return, responds to gates, and never waits for a parked gate to self-resolve.
+The pipeline owns every validation fix, including auto-fix findings and fixes for real bugs found in the cook's own code; the cook authorizes or answers with `no-mistakes axi respond` instead of editing, committing, aborting, or re-running while the run is active.
+Do not use `--yes` for cook validation because it silently resolves `ask-user` findings without escalation.
 Local `.no-mistakes/` state and test evidence stay out of this repo; `.no-mistakes.yaml` keeps evidence in a temp directory instead.
 
 Check and test the toolbelt before pushing:
@@ -61,24 +61,24 @@ bash -n bin/*.sh                          # syntax-check the toolbelt
 shellcheck bin/*.sh tests/*.sh            # lint the toolbelt and behavior tests; CI enforces this
 for test_script in tests/*.test.sh; do "$test_script"; done   # behavior tests, matching CI
 tests/fm-wake-queue.test.sh               # durable wake queue losslessness, catch-up, double-drain, duplicate-collapse, and drain liveness guard tests
-tests/fm-watcher-lock.test.sh             # watcher singleton, lock-race, watch-arm liveness, and guard-warning tests
-tests/fm-daemon.test.sh                   # sub-supervisor classifier, /afk presence-gating, max-defer, composer, and fm-send submit tests
+tests/fm-watcher-lock.test.sh             # pass singleton, lock-race, watch-arm liveness, and guard-warning tests
+tests/fm-daemon.test.sh                   # sub-expediter classifier, /afk presence-gating, max-defer, composer, and fm-send submit tests
 tests/fm-send-settle.test.sh              # fm-send post-submit settle pause, tuning, disable, and --key bypass tests
-tests/fm-send-secondmate-marker.test.sh   # fm-send from-firstmate marker for kind=secondmate targets: marked vs crewmate/explicit/--key, and the exact marker byte sequence
-tests/fm-wake-daemon-lifecycle-e2e.test.sh # watcher + daemon lifecycle e2e: restart catch-up, batching, dedupe, stale-pane routing, and digest injection
+tests/fm-send-secondmate-marker.test.sh   # fm-send from-Sous marker for kind=secondmate targets: marked vs cook/explicit/--key, and the exact marker byte sequence
+tests/fm-wake-daemon-lifecycle-e2e.test.sh # pass + daemon lifecycle e2e: restart catch-up, batching, dedupe, stale-pane routing, and digest injection
 tests/fm-composer-ghost.test.sh           # dim-ghost stripping, ghost-only composer detection, and escape-free peek tests
 tests/fm-afk-inject-e2e.test.sh           # private-socket end-to-end test of the afk injection path (partial-input deferral, swallowed-Enter retry)
 tests/fm-bootstrap.test.sh                # bootstrap dependency and feature-probe tests
-tests/fm-tangle-guard.test.sh             # primary-checkout tangle detection and spawn/brief isolation tests
+tests/fm-tangle-guard.test.sh             # primary-checkout tangle detection and fire/brief isolation tests
 tests/fm-spawn-batch.test.sh              # batch dispatch and FM_HOME project-path scoping tests
 tests/fm-update.test.sh                   # fast-forward-only self-update, reread, nudge, dedup, and skip-safety tests
-tests/fm-secondmate-sync.test.sh          # local-HEAD secondmate sync, no-fetch, bootstrap nudge gating, and spawn hook tests
-tests/fm-secondmate-lifecycle-e2e.test.sh # persistent secondmate routing, seeding, backlog handoff, spawn, recovery, teardown, and FM_HOME flow tests
-tests/fm-secondmate-safety.test.sh        # secondmate home safety, idle charter, handoff validation, and teardown boundary tests
+tests/fm-secondmate-sync.test.sh          # local-HEAD station chef sync, no-fetch, bootstrap nudge gating, and spawn hook tests
+tests/fm-secondmate-lifecycle-e2e.test.sh # persistent station chef routing, seeding, backlog handoff, fire, recovery, 86, and FM_HOME flow tests
+tests/fm-secondmate-safety.test.sh        # station chef home safety, idle charter, handoff validation, and 86 boundary tests
 tests/fm-teardown.test.sh                 # fm-teardown.sh landed-work safety and reminder checks: fork-remote allow, squash/content landings, dirty and unlanded refusals, PR-head metadata, tasks-axi reminder, --force override
 [ "$(readlink CLAUDE.md)" = "AGENTS.md" ]
 [ "$(readlink .claude/skills)" = "../.agents/skills" ]
-FM_HEARTBEAT=2 FM_POLL=1 bin/fm-watch-arm.sh  # watcher re-arm smoke test (prints arm status, then "heartbeat")
+FM_HEARTBEAT=2 FM_POLL=1 bin/fm-watch-arm.sh  # pass re-arm smoke test (prints arm status, then "heartbeat")
 ```
 
 ## Questions

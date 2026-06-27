@@ -1,19 +1,19 @@
 ---
 name: updatefirstmate
-description: Self-update a running firstmate and its secondmates to the latest from origin. Use when the captain invokes /updatefirstmate (e.g. "/updatefirstmate", "update firstmate", "pull the latest firstmate"). Fast-forwards this firstmate repo's default branch and every secondmate home from origin (fast-forward only, never forced, never disruptive), then re-reads AGENTS.md and nudges each updated secondmate to do the same, so the whole tree runs the latest bin/ and instructions.
+description: Self-update a running Sous and its station chefs to the latest from origin. Use when the Chef invokes /updatefirstmate (e.g. "/updatefirstmate", "update Sous", "pull the latest Sous"). Fast-forwards this Sous repo's default branch and every station chef home from origin (fast-forward only, never forced, never disruptive), then re-reads AGENTS.md and nudges each updated station chef to do the same, so the whole tree runs the latest bin/ and instructions.
 user-invocable: true
 ---
 
 # updatefirstmate
 
-Self-update firstmate in place.
-Firstmate is its own repo, behind the same no-mistakes gate as any project, so new tracked material (AGENTS.md, bin/, skills) reaches `main` and then sits there until each running firstmate pulls it.
-This skill performs that pull for the running main firstmate and every secondmate, without disturbing any in-flight work.
+Self-update Sous in place.
+Sous is its own repo, behind the same no-mistakes gate as any project, so new tracked material (AGENTS.md, bin/, skills) reaches `main` and then sits there until each running Sous pulls it.
+This skill performs that pull for the running main Sous and every station chef, without disturbing any in-flight work.
 
-The update is **fast-forward only** - the same sanctioned self-write as the fleet sync firstmate already runs.
+The update is **fast-forward only** - the same sanctioned self-write as the brigade sync Sous already runs.
 It never forces, never creates a merge commit, never stashes, and advances a target only on a clean fast-forward; anything dirty, diverged, offline, or on the wrong branch is skipped and reported.
-A tracked-files fast-forward leaves the gitignored operational dirs (data/, state/, config/, projects/, .no-mistakes/) untouched, so a secondmate's in-flight work is never disrupted.
-This touches only the firstmate repo and its own worktrees, never anything under `projects/`.
+A tracked-files fast-forward leaves the gitignored operational dirs (data/, state/, config/, projects/, .no-mistakes/) untouched, so a station chef's in-flight work is never disrupted.
+This touches only the Sous repo and its own worktrees, never anything under `projects/`.
 
 ## What it does
 
@@ -21,7 +21,7 @@ This touches only the firstmate repo and its own worktrees, never anything under
    ```sh
    bin/fm-update.sh
    ```
-   It fast-forwards this firstmate repo's default branch from origin, then fast-forwards every registered secondmate home (each a treehouse worktree of this same repo, leased at a detached HEAD on the default branch) the same way.
+   It fast-forwards this Sous repo's default branch from origin, then fast-forwards every registered station chef home (each a treehouse worktree of this same repo, leased at a detached HEAD on the default branch) the same way.
    It prints one status line per target (`updated <old>..<new>` / `already current` / `skipped: <reason>`), followed by two action lines that tell you exactly what to do next:
    - `reread-firstmate: yes|no`
    - `nudge-secondmates: <window-targets...>|none`
@@ -31,26 +31,26 @@ This touches only the firstmate repo and its own worktrees, never anything under
    **Read `AGENTS.md` now** (CLAUDE.md is a symlink to it) to refresh your operating instructions before doing anything else, so you are acting on the new instructions rather than the stale ones you were started with.
    When it printed `reread-firstmate: no`, nothing changed for you - skip the re-read.
 
-3. **Nudge each updated live secondmate.**
-   For every target listed on the `nudge-secondmates:` line (do nothing when it says `none`), send a one-line re-read nudge so that secondmate picks up its new instructions too:
+3. **Nudge each updated live station chef.**
+   For every target listed on the `nudge-secondmates:` line (do nothing when it says `none`), send a one-line re-read nudge so that station chef picks up its new instructions too:
    ```sh
-   bin/fm-send.sh <window-target> 'firstmate was updated to the latest - please re-read your AGENTS.md to pick up the new instructions.'
+   bin/fm-send.sh <window-target> 'Sous was updated to the latest - please re-read your AGENTS.md to pick up the new instructions.'
    ```
-   This is a gentle steer, not an interruption: the secondmate already got a safe tracked-files fast-forward, and the nudge never forces, tears down, or discards its work.
-   A secondmate that was skipped, already current, or has no live metadata is not on the list and needs no nudge.
+   This is a gentle call, not an interruption: the station chef already got a safe tracked-files fast-forward, and the nudge never forces, 86s, or discards its work.
+   A station chef that was skipped, already current, or has no live metadata is not on the list and needs no nudge.
 
-4. **Report to the captain in plain outcomes.**
-   Summarize what landed without firstmate's internal vocabulary: which parts of the fleet are now on the latest, and which were left as-is and why.
-   For example: "Captain, firstmate and both domain supervisors are now on the latest."
-   Surface any skipped target whose reason needs the captain's attention - for instance a home with its own un-landed changes (diverged) or local edits (dirty), which were left untouched on purpose.
+4. **Report to the Chef in plain outcomes.**
+   Summarize what landed without Sous's internal vocabulary: which parts of the brigade are now on the latest, and which were left as-is and why.
+   For example: "Chef, Sous and both domain expediters are now on the latest."
+   Surface any skipped target whose reason needs the Chef's attention - for instance a home with its own un-landed changes (diverged) or local edits (dirty), which were left untouched on purpose.
 
 ## Safety
 
 - **Fast-forward only.**
   A target that has diverged, is dirty, is offline, or is on a non-default branch is skipped and reported, never forced or stashed.
   Nothing with unlanded work is ever discarded - this is prime directive #3.
-- **Only the firstmate repo and its worktrees** are touched, never `projects/`.
-  It is the same sanctioned self-write as the fleet sync.
-- **Secondmates are never disrupted.**
-  A secondmate gets a tracked-files fast-forward (safe while it is mid-task, since its work lives in gitignored operational dirs and separate project worktrees) plus a gentle re-read nudge.
-  It is never torn down, interrupted, or forced.
+- **Only the Sous repo and its worktrees** are touched, never `projects/`.
+  It is the same sanctioned self-write as the brigade sync.
+- **Station chefs are never disrupted.**
+  A station chef gets a tracked-files fast-forward (safe while it is mid-ticket, since its work lives in gitignored operational dirs and separate project worktrees) plus a gentle re-read nudge.
+  It is never 86'd, interrupted, or forced.
