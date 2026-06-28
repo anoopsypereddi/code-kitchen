@@ -16,7 +16,8 @@ Each file also starts with a short header comment.
 | `sc-spawn.sh`            | Fire one ticket, several `id=repo` pairs, or a persistent station chef with `--secondmate`; service/prep fires require an isolated treehouse worktree; station chef fires locally sync the home before launch |
 | `sc-project-mode.sh`     | Resolve a project's delivery mode and `+yolo` flag from `data/projects.md`                                          |
 | `sc-merge-local.sh`      | Fast-forward a `local-only` project's local default branch after approval                                           |
-| `sc-review-diff.sh`      | Review a cook branch against the authoritative base, with optional `--stat` output                                 |
+| `sc-review-diff.sh`      | Review a cook branch against the authoritative base, with optional `--stat` output; degrades to the best available base when origin is offline |
+| `sc-gate-recover.sh`     | Self-heal a wedged no-mistakes gate ("no previous run for branch") by deleting and re-pushing the gate ref so the post-receive hook fires; idempotent and bounded by `SC_GATE_RECOVER_TRIES` |
 | `sc-marker-lib.sh`       | Shared from-Souschef request marker and detector sourced by `sc-send.sh`, `sc-brief.sh`, and tests                     |
 | `sc-watch-arm.sh`        | Verified per-home pass re-arm; reports `started`, `healthy`, or `FAILED`; `--restart` relaunches only this home's pass |
 | `sc-watch.sh`            | Singleton-safe one-shot pass; blocks until expediting work is due, queues it durably, then exits with one reason line |

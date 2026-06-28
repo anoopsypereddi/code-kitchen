@@ -70,6 +70,7 @@ The `data/secondmates.md` line schema and the station chef environment variables
 
 `data/projects.md` records each project's delivery mode and optional `+yolo` autonomy flag.
 `no-mistakes` projects run the full validation pipeline, `direct-PR` projects open PRs without that pipeline, and `local-only` projects stay local until Souschef performs an approved fast-forward merge.
+When a `no-mistakes` gate wedges with "no previous run for branch" (a same-ref re-push from an isolated worktree is a no-op, so the post-receive hook never fires), the cook self-heals with `bin/sc-gate-recover.sh`, which deletes and re-pushes the gate ref so the hook fires; it is idempotent, bounded by `SC_GATE_RECOVER_TRIES`, and reports blocked only when recovery genuinely fails.
 86 is fail-closed for service worktrees: dirty worktrees refuse, and committed work must be landed before the worktree is returned.
 Landed work is accepted when `HEAD` is reachable from any remote-tracking branch, when a PR for the current `HEAD` is merged, or when the worktree content is already present in the freshly fetched default branch.
 That content check lets a squash-merged PR whose head branch was deleted 86 cleanly without using `--force`; `local-only` work instead 86s after the approved local default-branch merge or after the branch is pushed to any remote.
