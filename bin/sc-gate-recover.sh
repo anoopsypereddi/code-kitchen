@@ -45,10 +45,10 @@ git rev-parse --git-dir >/dev/null 2>&1 || {
 if [ -z "$BRANCH" ]; then
   BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)
 fi
-[ -n "$BRANCH" ] && [ "$BRANCH" != HEAD ] || {
+if [ -z "$BRANCH" ] || [ "$BRANCH" = HEAD ]; then
   echo "sc-gate-recover: cannot resolve a feature branch (detached HEAD?); pass it explicitly" >&2
   exit 1
-}
+fi
 
 git remote get-url "$REMOTE" >/dev/null 2>&1 || {
   echo "sc-gate-recover: no '$REMOTE' remote in this worktree; run 'no-mistakes init' first" >&2
