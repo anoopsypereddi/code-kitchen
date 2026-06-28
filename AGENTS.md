@@ -65,6 +65,7 @@ Each station chef gets its own persistent `SC_HOME`, so its local state, backlog
 AGENTS.md            this file (CLAUDE.md is a symlink to it)
 CONTRIBUTING.md      contributor workflow and repo conventions
 README.md            public overview and development notes
+setup.sh             one-command fresh-machine provisioner (reuses sc-bootstrap detection; see README)
 .github/workflows/   shared CI and PR enforcement, committed
 .tasks.toml          tracked tasks-axi markdown backend config; drives backlog mutations when a compatible tasks-axi is on PATH (section 10), otherwise inert
 .agents/skills/      shared skills, committed
