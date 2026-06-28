@@ -47,7 +47,7 @@ die() { echo "error: $*" >&2; exit 1; }
 command -v "$RUNTIME" >/dev/null 2>&1 || die "container runtime '$RUNTIME' not found on PATH (set SC_CONTAINER_RUNTIME)"
 
 cmd="${1:-}"
-[ "$#" -gt 0 ] && shift || true
+if [ "$#" -gt 0 ]; then shift; fi
 
 case "$cmd" in
   build)
