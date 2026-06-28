@@ -167,7 +167,7 @@ Reconcile reality with your records before doing anything else:
 5. If a recorded direct-report window is missing, reconcile it through its meta as described below.
 6. For meta with no window, reconcile by kind.
    For ordinary cooks, check `treehouse status` in that project, salvage or report.
-   For `kind=secondmate`, load `secondmate-provisioning`, treat it as a dead persistent direct report, and re-fire it from recorded meta or the registry entry.
+   For `kind=secondmate`, load `station-chef-provisioning`, treat it as a dead persistent direct report, and re-fire it from recorded meta or the registry entry.
 7. Do not reconstruct a station chef's whole tree from the main home.
    The main Souschef reconciles only direct reports.
    Each station chef is a Souschef in its own home, so it reconciles only work that is already its own and then idles; it never creates new work during recovery.
@@ -203,7 +203,7 @@ Every persistent station chef has one line:
 ```
 
 The `scope:` field is used during intake; the `projects:` field is a non-exclusive clone list, not ownership.
-Load `secondmate-provisioning` before creating, seeding, validating, handing backlog to, recovering, or retiring a station chef home, and before editing `data/secondmates.md`.
+Load `station-chef-provisioning` before creating, seeding, validating, handing backlog to, recovering, or retiring a station chef home, and before editing `data/secondmates.md`.
 That reference owns home leases, transactional rollback, validation, project clone restrictions, handoff edge cases, charter copy rules, and 86 internals.
 
 A station chef is idle by default: it acts only on work the main Souschef routes to it.
@@ -216,7 +216,7 @@ When a station chef is created for a domain, the existing main-backlog items tha
 Scope-matching is Souschef's judgment against the station chef's natural-language scope, not a keyword rule.
 Read `data/backlog.md`, pick queued items that fit the scope, and move them with `bin/sc-backlog-handoff.sh <secondmate-id> <item-key>...`.
 Do not hand off `local-only` items; that work stays with the main Souschef (section 7).
-For idempotence, destination validation, and refusal of `## In flight` entries, load `secondmate-provisioning`.
+For idempotence, destination validation, and refusal of `## In flight` entries, load `station-chef-provisioning`.
 
 ### Project memory ownership
 
@@ -413,7 +413,7 @@ Re-evaluate the queue and fire only queued work whose blockers are gone and whos
 A station chef is persistent by default.
 An empty queue is healthy and does not trigger 86.
 Run `bin/sc-teardown.sh <id>` for `kind=secondmate` only when the Chef or main Souschef explicitly decides to retire that persistent expediter.
-Load `secondmate-provisioning` before retiring it.
+Load `station-chef-provisioning` before retiring it.
 The safety check is the station chef's own home: 86 refuses while its `state/*.meta` contains in-flight work.
 With `--force`, 86 is the explicit discard path for child windows, child work, state, route, lease, and home; never use it unless the Chef explicitly said to discard the work.
 
@@ -474,7 +474,7 @@ On wake, in order of cheapness:
 1. Read the reason line and drain queued wake records with `bin/sc-wake-drain.sh`.
 2. `signal:` read the listed status files first; a wake lists every signal that landed within the coalescing grace window (e.g. a status write plus the same turn's turn-end marker), and each is ~30 tokens and usually sufficient.
 3. `stale:` the cook stopped without reporting; peek the pane (`bin/sc-peek.sh <window>`) to diagnose.
-   If the pane is waiting, looping, confused, or unresponsive, load `stuck-crewmate-recovery`.
+   If the pane is waiting, looping, confused, or unresponsive, load `stuck-cook-recovery`.
 4. `check:` a per-ticket poll fired (usually a merge); act on it.
 5. `heartbeat:` review the whole brigade: skim each window's status file, peek panes that look off, check PR-ready tickets for merge, reconcile data/backlog.md, then re-arm the pass.
    A heartbeat with no Chef-relevant change is internal; do not report that the brigade is unchanged.
@@ -532,7 +532,7 @@ Inline facts that must survive without a loaded skill:
 
 ### Stuck-cook recovery
 
-On `stale`, looping, repeated confusion, an answered-by-brief question, an unresponsive pane, or a failed call, load `stuck-crewmate-recovery`.
+On `stale`, looping, repeated confusion, an answered-by-brief question, an unresponsive pane, or a failed call, load `stuck-cook-recovery`.
 That playbook escalates from peek, to one-line call, to harness-specific interrupt, to relaunch with a progress note, to `failed` with evidence.
 
 ## 9. Escalation and Chef etiquette
@@ -620,7 +620,7 @@ Set `SC_SECONDMATE_CHARTER='<charter>'` to fill the charter text and `SC_SECONDM
 If you scaffold without `SC_SECONDMATE_CHARTER`, replace the `{TASK}` placeholder before seeding.
 Keep the charter focused on persistent responsibility, available project clones, escalation back to the main Souschef status file, and the idle-by-default contract: reconcile only its own in-flight work and then wait, never self-initiating a survey or audit.
 Preserve the requests-from-main-Souschef contract in the charter: marked requests return via status or a doc pointer, while unmarked direct Chef messages stay conversational.
-Before seeding, loading, handing backlog to, or launching a station chef home, load `secondmate-provisioning`.
+Before seeding, loading, handing backlog to, or launching a station chef home, load `station-chef-provisioning`.
 The status-reporting protocol is intentionally sparse: cooks append status only for expediter-actionable phase changes or `needs-decision`/`blocked`/`done`/`failed`, because every append wakes Souschef.
 For any generated brief that still contains `{TASK}`, replace it with a clear ticket description, acceptance criteria, and any constraints or context the cook needs before firing or seeding.
 Adjust the other sections only when the ticket genuinely deviates from the standard service-a-new-PR shape (e.g. fixing an existing external PR); the scaffold is the contract, not a suggestion.
@@ -636,5 +636,5 @@ It performs only fast-forward self-updates of Souschef and registered station ch
 These skills are not Chef-invocable; they are conditional operating references you must load at the trigger points below.
 
 - `harness-adapters` - load before firing or recovering a cook or station chef, handling a trust dialog, sending a harness-specific skill invocation, interrupting or exiting an agent, resuming an exited agent, or verifying a new harness adapter.
-- `stuck-crewmate-recovery` - load after a stale wake, looping pane, repeated confusion, an answered-by-brief question, an unresponsive cook, or a failed call.
-- `secondmate-provisioning` - load before creating, seeding, validating, recovering, handing backlog to, or retiring a station chef home, and before editing `data/secondmates.md`.
+- `stuck-cook-recovery` - load after a stale wake, looping pane, repeated confusion, an answered-by-brief question, an unresponsive cook, or a failed call.
+- `station-chef-provisioning` - load before creating, seeding, validating, recovering, handing backlog to, or retiring a station chef home, and before editing `data/secondmates.md`.

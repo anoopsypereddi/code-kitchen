@@ -1,10 +1,10 @@
 ---
-name: secondmate-provisioning
+name: station-chef-provisioning
 description: Agent-only reference for persistent station chef setup and retirement. Use when creating, seeding, validating, recovering, handing backlog to, or retiring a station chef home, or when editing data/secondmates.md. Covers home leases, transactional seeding, project clone restrictions, idle charter, handoff helper, and 86 safety.
 user-invocable: false
 ---
 
-# secondmate-provisioning
+# station-chef-provisioning
 
 Use this reference before creating, seeding, validating, handing backlog to, recovering, or retiring a persistent station chef, and before editing `data/secondmates.md`.
 
