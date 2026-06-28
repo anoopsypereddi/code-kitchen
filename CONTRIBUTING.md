@@ -14,9 +14,9 @@ Dependency bots are exempt so their automation keeps working, but regular contri
 
 ## Workflow
 
-1. Fork the repo, then clone the parent repo or set your local `origin` back to the parent (`git@github.com:kunchenguid/firstmate.git`).
+1. Fork the repo, then clone the parent repo or set your local `origin` back to the parent (`git@github.com:kunchenguid/souschef.git`).
 2. Create a branch and make your changes.
-3. Initialize the gate with your fork as the push target: `no-mistakes init --fork-url git@github.com:<you>/firstmate.git` (fork routing requires **no-mistakes v1.30.1+**; without a fork, plain `no-mistakes init` still works for maintainers with push access).
+3. Initialize the gate with your fork as the push target: `no-mistakes init --fork-url git@github.com:<you>/souschef.git` (fork routing requires **no-mistakes v1.30.1+**; without a fork, plain `no-mistakes init` still works for maintainers with push access).
 4. Commit your changes.
 5. Push through the gate instead of pushing to `origin`:
 
@@ -32,7 +32,7 @@ See the [no-mistakes quick start](https://kunchenguid.github.io/no-mistakes/star
 
 ## Repo conventions
 
-- This repo is a template for running a Sous orchestrator agent.
+- This repo is a template for running a Souschef orchestrator agent.
   `AGENTS.md` is the agent's main job description and names when to load bundled skills; `CLAUDE.md` is a symlink to it, and `.claude/skills` is a symlink to `.agents/skills`.
 - Only shared material is tracked: `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, `.tasks.toml`, `.github/workflows/`, `bin/`, and `.agents/skills/`.
   Everything personal to one Chef's brigade (`data/`, `state/`, `config/`, `projects/`, `.no-mistakes/`) is gitignored; never commit it.
@@ -42,14 +42,14 @@ See the [no-mistakes quick start](https://kunchenguid.github.io/no-mistakes/star
   Each starts with a usage header comment; keep it accurate when you change behavior.
   Test scripts and helpers in `tests/` are plain bash too.
   `shellcheck bin/*.sh tests/*.sh` must pass, and CI enforces it.
-- Changes to harness adapters (launch templates in `bin/fm-spawn.sh`, facts in `.agents/skills/harness-adapters/SKILL.md`) must be verified empirically against the real harness, never written from documentation alone.
+- Changes to harness adapters (launch templates in `bin/sc-spawn.sh`, facts in `.agents/skills/harness-adapters/SKILL.md`) must be verified empirically against the real harness, never written from documentation alone.
 - In Markdown, put each full sentence on its own line.
 
 ## Development
 
-Tracked changes to Sous itself - `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, `.tasks.toml`, `.github/workflows/`, `bin/`, and agent skill files - go through the `no-mistakes` pipeline on a feature branch and require an explicit merge approval.
-When expediting live cooks, keep Sous's own long validation or build commands in the background so pass wakes can still be handled.
-Unlike Sous, a cook owns its own validation gate loop: it processes every `no-mistakes axi run` or `no-mistakes axi respond` return, responds to gates, and never waits for a parked gate to self-resolve.
+Tracked changes to Souschef itself - `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, `.tasks.toml`, `.github/workflows/`, `bin/`, and agent skill files - go through the `no-mistakes` pipeline on a feature branch and require an explicit merge approval.
+When expediting live cooks, keep Souschef's own long validation or build commands in the background so pass wakes can still be handled.
+Unlike Souschef, a cook owns its own validation gate loop: it processes every `no-mistakes axi run` or `no-mistakes axi respond` return, responds to gates, and never waits for a parked gate to self-resolve.
 The pipeline owns every validation fix, including auto-fix findings and fixes for real bugs found in the cook's own code; the cook authorizes or answers with `no-mistakes axi respond` instead of editing, committing, aborting, or re-running while the run is active.
 Do not use `--yes` for cook validation because it silently resolves `ask-user` findings without escalation.
 Local `.no-mistakes/` state and test evidence stay out of this repo; `.no-mistakes.yaml` keeps evidence in a temp directory instead.
@@ -60,25 +60,25 @@ Check and test the toolbelt before pushing:
 bash -n bin/*.sh                          # syntax-check the toolbelt
 shellcheck bin/*.sh tests/*.sh            # lint the toolbelt and behavior tests; CI enforces this
 for test_script in tests/*.test.sh; do "$test_script"; done   # behavior tests, matching CI
-tests/fm-wake-queue.test.sh               # durable wake queue losslessness, catch-up, double-drain, duplicate-collapse, and drain liveness guard tests
-tests/fm-watcher-lock.test.sh             # pass singleton, lock-race, watch-arm liveness, and guard-warning tests
-tests/fm-daemon.test.sh                   # sub-expediter classifier, /afk presence-gating, max-defer, composer, and fm-send submit tests
-tests/fm-send-settle.test.sh              # fm-send post-submit settle pause, tuning, disable, and --key bypass tests
-tests/fm-send-secondmate-marker.test.sh   # fm-send from-Sous marker for kind=secondmate targets: marked vs cook/explicit/--key, and the exact marker byte sequence
-tests/fm-wake-daemon-lifecycle-e2e.test.sh # pass + daemon lifecycle e2e: restart catch-up, batching, dedupe, stale-pane routing, and digest injection
-tests/fm-composer-ghost.test.sh           # dim-ghost stripping, ghost-only composer detection, and escape-free peek tests
-tests/fm-afk-inject-e2e.test.sh           # private-socket end-to-end test of the afk injection path (partial-input deferral, swallowed-Enter retry)
-tests/fm-bootstrap.test.sh                # bootstrap dependency and feature-probe tests
-tests/fm-tangle-guard.test.sh             # primary-checkout tangle detection and fire/brief isolation tests
-tests/fm-spawn-batch.test.sh              # batch dispatch and FM_HOME project-path scoping tests
-tests/fm-update.test.sh                   # fast-forward-only self-update, reread, nudge, dedup, and skip-safety tests
-tests/fm-secondmate-sync.test.sh          # local-HEAD station chef sync, no-fetch, bootstrap nudge gating, and spawn hook tests
-tests/fm-secondmate-lifecycle-e2e.test.sh # persistent station chef routing, seeding, backlog handoff, fire, recovery, 86, and FM_HOME flow tests
-tests/fm-secondmate-safety.test.sh        # station chef home safety, idle charter, handoff validation, and 86 boundary tests
-tests/fm-teardown.test.sh                 # fm-teardown.sh landed-work safety and reminder checks: fork-remote allow, squash/content landings, dirty and unlanded refusals, PR-head metadata, tasks-axi reminder, --force override
+tests/sc-wake-queue.test.sh               # durable wake queue losslessness, catch-up, double-drain, duplicate-collapse, and drain liveness guard tests
+tests/sc-watcher-lock.test.sh             # pass singleton, lock-race, watch-arm liveness, and guard-warning tests
+tests/sc-daemon.test.sh                   # sub-expediter classifier, /afk presence-gating, max-defer, composer, and sc-send submit tests
+tests/sc-send-settle.test.sh              # sc-send post-submit settle pause, tuning, disable, and --key bypass tests
+tests/sc-send-secondmate-marker.test.sh   # sc-send from-Souschef marker for kind=secondmate targets: marked vs cook/explicit/--key, and the exact marker byte sequence
+tests/sc-wake-daemon-lifecycle-e2e.test.sh # pass + daemon lifecycle e2e: restart catch-up, batching, dedupe, stale-pane routing, and digest injection
+tests/sc-composer-ghost.test.sh           # dim-ghost stripping, ghost-only composer detection, and escape-free peek tests
+tests/sc-afk-inject-e2e.test.sh           # private-socket end-to-end test of the afk injection path (partial-input deferral, swallowed-Enter retry)
+tests/sc-bootstrap.test.sh                # bootstrap dependency and feature-probe tests
+tests/sc-tangle-guard.test.sh             # primary-checkout tangle detection and fire/brief isolation tests
+tests/sc-spawn-batch.test.sh              # batch dispatch and SC_HOME project-path scoping tests
+tests/sc-update.test.sh                   # fast-forward-only self-update, reread, nudge, dedup, and skip-safety tests
+tests/sc-secondmate-sync.test.sh          # local-HEAD station chef sync, no-fetch, bootstrap nudge gating, and spawn hook tests
+tests/sc-secondmate-lifecycle-e2e.test.sh # persistent station chef routing, seeding, backlog handoff, fire, recovery, 86, and SC_HOME flow tests
+tests/sc-secondmate-safety.test.sh        # station chef home safety, idle charter, handoff validation, and 86 boundary tests
+tests/sc-teardown.test.sh                 # sc-teardown.sh landed-work safety and reminder checks: fork-remote allow, squash/content landings, dirty and unlanded refusals, PR-head metadata, tasks-axi reminder, --force override
 [ "$(readlink CLAUDE.md)" = "AGENTS.md" ]
 [ "$(readlink .claude/skills)" = "../.agents/skills" ]
-FM_HEARTBEAT=2 FM_POLL=1 bin/fm-watch-arm.sh  # pass re-arm smoke test (prints arm status, then "heartbeat")
+SC_HEARTBEAT=2 SC_POLL=1 bin/sc-watch-arm.sh  # pass re-arm smoke test (prints arm status, then "heartbeat")
 ```
 
 ## Questions

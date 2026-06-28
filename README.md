@@ -18,7 +18,7 @@
   /></a>
 </p>
 
-<h3 align="center">Talk to the Sous. Ship with the brigade.</h3>
+<h3 align="center">Talk to the Souschef. Ship with the brigade.</h3>
 
 ## What it is
 
@@ -27,8 +27,8 @@ But the moment you want three things done in parallel across your projects - fix
 
 code-kitchen runs your work like a kitchen brigade.
 You are the **Chef**: you call out what you want and make the final calls.
-You talk to a single agent, the **Sous**, who runs the line for you and never cooks the dishes itself.
-The Sous **fires** each piece of work to a **Cook** - an autonomous agent working at its own **station**, a clean git worktree - **expedites** the whole line, and brings finished plates back to the pass: PRs ready for review, approved local merges, or standalone investigation reports.
+You talk to a single agent, the **Souschef**, who runs the line for you and never cooks the dishes itself.
+The Souschef **fires** each piece of work to a **Cook** - an autonomous agent working at its own **station**, a clean git worktree - **expedites** the whole line, and brings finished plates back to the pass: PRs ready for review, approved local merges, or standalone investigation reports.
 
 For a busy line, you can stand up persistent **station chefs**: domain specialists that own a recurring area of the kitchen and run from their own isolated homes.
 
@@ -39,14 +39,14 @@ There is no app to install. The brigade is `AGENTS.md`, a set of bundled skills,
 | In the kitchen      | What it means                                                                 |
 | ------------------- | ----------------------------------------------------------------------------- |
 | **Chef**            | you - you direct the work and make every merge call                           |
-| **Sous**            | the orchestrator you talk to; it runs the line and never edits projects itself |
+| **Souschef**            | the orchestrator you talk to; it runs the line and never edits projects itself |
 | **Cook**            | an autonomous worker agent that does one piece of work at its own station      |
 | **station chef**    | a persistent Cook that owns a recurring domain from its own isolated home      |
 | **station**         | a clean, disposable git worktree where one Cook works in isolation             |
 | **ticket**          | a single unit of work                                                          |
 | **the rail**        | the queue of tickets waiting to be fired                                       |
 | **fire**            | hand a ticket to a Cook and start the work                                     |
-| **the pass**        | where the Sous expedites the line and finished work is checked                 |
+| **the pass**        | where the Souschef expedites the line and finished work is checked                 |
 | **service!**        | the Chef's call to merge a finished plate                                      |
 | **86**              | tear down a station once its work has landed                                   |
 
@@ -54,12 +54,12 @@ There is no app to install. The brigade is `AGENTS.md`, a set of bundled skills,
 
 A ticket flows through the line like an order:
 
-1. **A ticket comes in.** You ask the Sous for a change, an investigation, a plan, or an audit. The Sous figures out which project it belongs to and what shape it is.
-2. **The Sous fires a Cook.** It opens a fresh station - a clean git worktree in its own tmux window - and hands the Cook a brief. Independent tickets run in parallel; nothing collides because every Cook has its own station.
-3. **The Cook works.** It does the job autonomously while the Sous expedites the line, waking only when a Cook needs a decision, finishes, or gets stuck. You can watch any station or type into it directly.
+1. **A ticket comes in.** You ask the Souschef for a change, an investigation, a plan, or an audit. The Souschef figures out which project it belongs to and what shape it is.
+2. **The Souschef fires a Cook.** It opens a fresh station - a clean git worktree in its own tmux window - and hands the Cook a brief. Independent tickets run in parallel; nothing collides because every Cook has its own station.
+3. **The Cook works.** It does the job autonomously while the Souschef expedites the line, waking only when a Cook needs a decision, finishes, or gets stuck. You can watch any station or type into it directly.
 4. **The plate is checked at the pass.** A change gets validated, then comes back as a PR (with CI green) or an approved local merge; an investigation comes back as a written report.
-5. **You call service!** Merging is always the Chef's call. The Sous never merges without your word.
-6. **86 the station.** Once the work has landed, the Sous tears the station down and clears the rail for the next ticket.
+5. **You call service!** Merging is always the Chef's call. The Souschef never merges without your word.
+6. **86 the station.** Once the work has landed, the Souschef tears the station down and clears the rail for the next ticket.
 
 A restart is a non-event: all state lives on disk and in tmux, so the line picks back up exactly where it was.
 
@@ -71,7 +71,7 @@ code-kitchen doesn't reinvent the tools - it conducts them:
 - **git** + **[treehouse](https://github.com/kunchenguid/treehouse)** - each station is an isolated worktree, so parallel work on one repo never steps on itself.
 - **gh** - GitHub operations (PRs, issues, CI) run through the `gh-axi` helper.
 - **no-mistakes** - the validation gate a change passes through before it can ship: automated review, tests, lint, docs, and CI.
-- **your agent harness** - claude, codex, opencode, or pi; the Sous spawns Cooks on the same harness you run.
+- **your agent harness** - claude, codex, opencode, or pi; the Souschef spawns Cooks on the same harness you run.
 - **the `*-axi` helpers** - ergonomic wrappers (`gh-axi`, `chrome-devtools-axi`, `lavish-axi`, and friends) the brigade uses for GitHub, browsers, and rich review surfaces.
 
 ## Two kinds of ticket
@@ -85,12 +85,12 @@ Each project picks how a finished change reaches `main`:
 
 - **no-mistakes** - the full validation gate, then a PR for you to merge. Highest assurance, the default.
 - **direct-PR** - push and open a PR for review, skipping the gate.
-- **local-only** - a local branch with no remote; the Sous shows you the diff and merges locally once you approve.
+- **local-only** - a local branch with no remote; the Souschef shows you the diff and merges locally once you approve.
 
 ## Getting started
 
 You need a verified agent harness (claude, codex, opencode, or pi), git with GitHub auth, and tmux for the station windows.
-The Sous detects and offers to install everything else on first run - so getting started is just launching your harness in this directory and talking to it.
+The Souschef detects and offers to install everything else on first run - so getting started is just launching your harness in this directory and talking to it.
 
 See [`AGENTS.md`](AGENTS.md) for the full operating manual and the bootstrap it runs at startup.
 
@@ -99,7 +99,7 @@ Then just talk:
 ```
 > look at my github project xyz, then fix the flaky login test and add dark mode
 
-  (the Sous clones the project, fires two Cooks, and expedites the line)
+  (the Souschef clones the project, fires two Cooks, and expedites the line)
 
   Ready for review: https://github.com/you/xyz/pull/42
   (fix flaky login test - risk: low - CI green)
@@ -108,14 +108,14 @@ Then just talk:
 ```
 
 Launching your harness from inside tmux puts every station window in your own session, where you can watch the brigade work in real time or jump into any station to intervene.
-Outside tmux, stations land in a detached `firstmate` session you can attach to.
+Outside tmux, stations land in a detached `souschef` session you can attach to.
 
 ## Documentation
 
 - [docs/architecture.md](docs/architecture.md) - how the brigade, expediting, stations, station chefs, and delivery modes work.
 - [docs/configuration.md](docs/configuration.md) - environment variables, homes, the files you set, and harness support.
 - [docs/scripts.md](docs/scripts.md) - the `bin/` toolbelt reference.
-- [`AGENTS.md`](AGENTS.md) - the Sous's full operating manual.
+- [`AGENTS.md`](AGENTS.md) - the Souschef's full operating manual.
 - [CONTRIBUTING.md](CONTRIBUTING.md) - how to contribute, including the dev/test commands.
 
 ## Contributing
