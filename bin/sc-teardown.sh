@@ -106,6 +106,9 @@ pr_is_merged() {
     target=$(pr_number_from_branch "$branch") || return 1
   fi
   [ -n "$target" ] || return 1
+  # Intentionally bare gh, not gh-axi: machine read of state+headRefOid, which
+  # gh-axi cannot supply (no --json/-q; pr list --fields/api expose no head SHA).
+  # The head-SHA match is what makes the merged-and-deleted-branch teardown safe.
   view=$(cd "$WT" && gh pr view "$target" --json state,headRefOid -q '.state + "\t" + .headRefOid' 2>/dev/null) || return 1
   state=${view%%$'\t'*}
   head=${view#*$'\t'}

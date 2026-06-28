@@ -21,6 +21,9 @@ if [ -f "$META" ]; then
   PR_HEAD=
   if [ -n "$WT" ] && [ -d "$WT" ]; then
     LOCAL_HEAD=$(git -C "$WT" rev-parse --verify HEAD 2>/dev/null || true)
+    # Intentionally bare gh, not gh-axi: this is a machine read of headRefOid by
+    # PR URL, which gh-axi cannot do (no --json/-q, pr view takes a number, and
+    # pr list --fields/api expose no head SHA). Switching would lose this check.
     if [ -n "$LOCAL_HEAD" ] && command -v gh >/dev/null 2>&1; then
       if REMOTE_HEAD=$(cd "$WT" && gh pr view "$URL" --json headRefOid -q .headRefOid 2>/dev/null); then
         if [ "$LOCAL_HEAD" = "$REMOTE_HEAD" ]; then
@@ -38,6 +41,8 @@ if [ -f "$META" ]; then
 fi
 
 cat > "$STATE/$ID.check.sh" <<EOF
+# Intentionally bare gh, not gh-axi: machine read of the PR state by URL, which
+# gh-axi has no JSON/-q mode for. Keeps the merge poll a clean MERGED check.
 state=\$(gh pr view "$URL" --json state -q .state 2>/dev/null)
 [ "\$state" = "MERGED" ] && echo "merged"
 EOF
