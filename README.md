@@ -106,6 +106,12 @@ When it finishes it prints the few steps that can't be scripted - `gh auth login
 
 See [`AGENTS.md`](AGENTS.md) for the full operating manual and the bootstrap it runs at startup.
 
+### Optional: run the kitchen in a container
+
+You can instead run the whole kitchen inside one long-lived Linux container, so nothing on your host (SSH keys, `gh` login, dotfiles, sibling repos) is visible to any agent.
+It is fully opt-in — if you never use it, the kitchen runs natively exactly as above.
+See [docs/containerization.md](docs/containerization.md) for build/up/shell/down usage, the scoped GitHub token and `secrets.env` you create, and the residual-risk callout.
+
 Then just talk:
 
 ```
@@ -127,6 +133,7 @@ Outside tmux, stations land in a detached `souschef` session you can attach to.
 - [docs/architecture.md](docs/architecture.md) - how the brigade, expediting, stations, station chefs, and delivery modes work.
 - [docs/configuration.md](docs/configuration.md) - environment variables, homes, the files you set, and harness support.
 - [docs/scripts.md](docs/scripts.md) - the `bin/` toolbelt reference.
+- [docs/containerization.md](docs/containerization.md) - the optional containerized kitchen: host boundary, mounts, credentials, and usage.
 - [`AGENTS.md`](AGENTS.md) - the Souschef's full operating manual.
 - [CONTRIBUTING.md](CONTRIBUTING.md) - how to contribute, including the dev/test commands.
 
