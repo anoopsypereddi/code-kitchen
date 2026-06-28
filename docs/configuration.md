@@ -91,6 +91,8 @@ SC_INJECT_CONFIRM_RETRIES=3        # daemon Enter-retry attempts after typing a 
 SC_INJECT_CONFIRM_SLEEP=0.5        # seconds between daemon submit checks
 SC_HEARTBEAT_SCAN_SECS=300         # cadence of the catch-all status scan for missed Chef verbs
 SC_HOUSEKEEPING_TICK=15            # seconds between batch-flush, stale-recheck, and scan passes
+# gate recovery (bin/sc-gate-recover.sh)
+SC_GATE_RECOVER_TRIES=2            # bounded re-push cycles before gate recovery reports failure
 SC_CRASH_THRESHOLD=10              # pass crashes allowed inside SC_CRASH_WINDOW before daemon backoff
 SC_CRASH_WINDOW=60                 # seconds in the crash-loop detection window
 SC_CRASH_BACKOFF=60                # seconds to wait after crossing the crash threshold

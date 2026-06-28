@@ -71,8 +71,19 @@ fi
 if git -C "$PROJ" remote get-url origin >/dev/null 2>&1; then
   # Update the remote-tracking ref itself; a bare single-branch fetch can leave
   # origin/<default> stale on some Git versions and only refresh FETCH_HEAD.
-  git -C "$WT" fetch origin "+refs/heads/$DEFAULT:refs/remotes/origin/$DEFAULT" --quiet
-  BASE="origin/$DEFAULT"
+  # Guarded: an unguarded fetch aborts the whole review when origin is offline.
+  # On failure, fall back to the best available base - the existing (possibly
+  # stale) origin/<default> if present, else the local default branch - so the
+  # review still runs with a warning instead of crashing.
+  if git -C "$WT" fetch origin "+refs/heads/$DEFAULT:refs/remotes/origin/$DEFAULT" --quiet 2>/dev/null; then
+    BASE="origin/$DEFAULT"
+  elif git -C "$WT" rev-parse --verify --quiet "refs/remotes/origin/$DEFAULT^{commit}" >/dev/null; then
+    echo "warn: fetch from origin failed (offline?); using existing, possibly stale origin/$DEFAULT" >&2
+    BASE="origin/$DEFAULT"
+  else
+    echo "warn: fetch from origin failed (offline?) and no origin/$DEFAULT ref present; falling back to local $DEFAULT" >&2
+    BASE="$DEFAULT"
+  fi
 else
   BASE="$DEFAULT"
 fi
