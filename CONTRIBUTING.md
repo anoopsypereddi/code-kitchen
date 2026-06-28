@@ -41,7 +41,9 @@ See the [no-mistakes quick start](https://kunchenguid.github.io/no-mistakes/star
 - Helper scripts in `bin/` are plain bash.
   Each starts with a usage header comment; keep it accurate when you change behavior.
   Test scripts and helpers in `tests/` are plain bash too.
-  `shellcheck bin/*.sh tests/*.sh` must pass, and CI enforces it.
+  `shellcheck bin/*.sh tests/*.sh setup.sh` must pass, and CI enforces it.
+  Scripts must also parse under stock macOS bash 3.2, the oldest supported target - avoid bash-4+ features, and never nest a here-doc inside `$(...)` (bash 3.2 mis-parses it; assemble such text without command substitution).
+  CI runs `bash -n` over every script on a macOS runner (bash 3.2.57) to enforce this.
 - Changes to harness adapters (launch templates in `bin/sc-spawn.sh`, facts in `.agents/skills/harness-adapters/SKILL.md`) must be verified empirically against the real harness, never written from documentation alone.
 - In Markdown, put each full sentence on its own line.
 
@@ -57,8 +59,8 @@ Local `.no-mistakes/` state and test evidence stay out of this repo; `.no-mistak
 Check and test the toolbelt before pushing:
 
 ```sh
-bash -n bin/*.sh                          # syntax-check the toolbelt
-shellcheck bin/*.sh tests/*.sh            # lint the toolbelt and behavior tests; CI enforces this
+bash -n bin/*.sh setup.sh                 # syntax-check the toolbelt (run under bash 3.2 too; CI does on macOS)
+shellcheck bin/*.sh tests/*.sh setup.sh   # lint the toolbelt, behavior tests, and setup.sh; CI enforces this
 for test_script in tests/*.test.sh; do "$test_script"; done   # behavior tests, matching CI
 tests/sc-wake-queue.test.sh               # durable wake queue losslessness, catch-up, double-drain, duplicate-collapse, and drain liveness guard tests
 tests/sc-watcher-lock.test.sh             # pass singleton, lock-race, watch-arm liveness, and guard-warning tests

@@ -117,9 +117,44 @@ secondmate_sync() {
   return 0
 }
 
+# Detect the OS package manager once. PKG_INSTALL is the install-command prefix
+# (e.g. "brew install" or "sudo apt-get install -y"); PKG_FAMILY names it so
+# package-name differences can be resolved. Both stay empty when none is found,
+# and base-tool installs then fall back to a clear "install X manually" message.
+PKG_INSTALL=""
+PKG_FAMILY=""
+detect_pkg_mgr() {
+  case "$(uname -s)" in
+    Darwin)
+      command -v brew >/dev/null 2>&1 && { PKG_INSTALL="brew install"; PKG_FAMILY=brew; } ;;
+    *)
+      if   command -v apt-get >/dev/null 2>&1; then PKG_INSTALL="sudo apt-get install -y";   PKG_FAMILY=apt
+      elif command -v dnf     >/dev/null 2>&1; then PKG_INSTALL="sudo dnf install -y";       PKG_FAMILY=dnf
+      elif command -v pacman  >/dev/null 2>&1; then PKG_INSTALL="sudo pacman -S --noconfirm"; PKG_FAMILY=pacman
+      fi ;;
+  esac
+}
+detect_pkg_mgr
+
+# Resolve a base tool to its package name for the detected manager. Most tools
+# share a name across managers; node, npm, and gh are the exceptions.
+pkg_name() {
+  case "$1" in
+    node) case "$PKG_FAMILY" in apt|dnf) echo nodejs ;; pacman) echo "nodejs npm" ;; *) echo node ;; esac ;;
+    npm)  case "$PKG_FAMILY" in brew) echo node ;; *) echo npm ;; esac ;;
+    gh)   case "$PKG_FAMILY" in pacman) echo github-cli ;; *) echo gh ;; esac ;;
+    *) echo "$1" ;;
+  esac
+}
+
 install_cmd() {
   case "$1" in
-    tmux|node|gh) echo "brew install $1  # or the platform's package manager" ;;
+    tmux|node|npm|gh|git|curl)
+      if [ -n "$PKG_INSTALL" ]; then
+        echo "$PKG_INSTALL $(pkg_name "$1")"
+      else
+        echo "install $1 manually (no supported package manager detected)"
+      fi ;;
     treehouse) echo "curl -fsSL https://kunchenguid.github.io/treehouse/install.sh | sh" ;;
     no-mistakes) echo "curl -fsSL https://raw.githubusercontent.com/kunchenguid/no-mistakes/main/docs/install.sh | sh" ;;
     gh-axi|chrome-devtools-axi|lavish-axi) echo "npm install -g $1 && $1 setup hooks" ;;
@@ -127,7 +162,7 @@ install_cmd() {
   esac
 }
 
-TOOLS="tmux node gh treehouse no-mistakes gh-axi chrome-devtools-axi lavish-axi"
+TOOLS="tmux node npm gh git curl treehouse no-mistakes gh-axi chrome-devtools-axi lavish-axi"
 
 treehouse_supports_lease() {
   treehouse get --help 2>&1 | grep -Eq '(^|[^[:alnum:]_-])--lease([^[:alnum:]_-]|$)'
@@ -138,7 +173,10 @@ if [ "${1:-}" = "install" ]; then
   [ $# -gt 0 ] || { echo "usage: sc-bootstrap.sh install <tool>..." >&2; exit 1; }
   for t in "$@"; do
     cmd=$(install_cmd "$t") || { echo "error: unknown tool $t" >&2; exit 1; }
-    cmd=${cmd%%  #*}
+    case "$cmd" in
+      "install "*" manually"*)
+        echo "error: cannot auto-install $t: $cmd" >&2; exit 1 ;;
+    esac
     echo "installing $t: $cmd"
     eval "$cmd"
   done
