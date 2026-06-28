@@ -55,13 +55,12 @@ start_no_mistakes_daemon() {
 # $GH_TOKEN live at push time; if it is unset the helper emits nothing and git
 # falls back to its normal prompt (which fails closed, never leaking).
 configure_git() {
-  # The single-quoted bodies are git config helper strings, NOT shell to run
-  # now: $1 and $GH_TOKEN must stay literal so git expands them at push time
-  # (reading GH_TOKEN live from the env). Expanding them here would bake a
-  # stale/empty token into the config. Hence the deliberate SC2016 suppressions.
-  # shellcheck disable=SC2016
-  git config --global credential.helper \
-    '!f() { test "$1" = get && echo "username=x-access-token" && echo "password=${GH_TOKEN}"; }; f'
+  # The single-quoted body is a git config helper string, NOT shell to run now:
+  # $1 and $GH_TOKEN must stay literal so git expands them at push time (reading
+  # GH_TOKEN live from the env). Expanding them here would bake a stale/empty
+  # token into the config. Hence the deliberate SC2016 suppression. The helper is
+  # scoped to github.com only, so the token is never offered to any other HTTPS
+  # host (e.g. a `go get` from a non-GitHub remote).
   # shellcheck disable=SC2016
   git config --global credential.https://github.com.helper \
     '!f() { test "$1" = get && echo "username=x-access-token" && echo "password=${GH_TOKEN}"; }; f'
