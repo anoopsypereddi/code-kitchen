@@ -35,3 +35,4 @@ Each file also starts with a short header comment.
 | `sc-teardown.sh`         | Return a clean, landed service worktree or retire/release a station chef home; requires prep tasting notes, checks child work, and prints the backlog reminder |
 | `sc-harness.sh`          | Detect the running harness; resolve the effective cook harness                                                     |
 | `sc-lock.sh`             | Per-home Souschef session lock                                                                                          |
+| `sc-container.sh`        | Build/run the optional containerized kitchen (`build`/`up`/`shell`/`down`/`nuke`) on named volumes with a `--env-file` secrets drop; opt-in, native operation is unchanged |
