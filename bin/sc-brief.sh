@@ -274,6 +274,9 @@ You advance the work only by responding to gates:
   Even when it is a real bug in your own code, do NOT implement the decided fix yourself and do NOT abort to go fix it - the pipeline applies it from your \`respond\`.
 - Avoid \`--yes\`: it silently auto-resolves every finding, including \`ask-user\`, with zero escalation, so a decision the captain should make gets resolved without them.
   Drive gates manually and escalate \`ask-user\` findings.
+- Gate wedge self-heal: if \`no-mistakes axi run\` reports **"no previous run for branch"** (the gate hook did not fire because your branch lives in an isolated worktree and a same-ref re-push is a no-op), recover yourself instead of reporting blocked:
+  run \`$SC_ROOT/bin/sc-gate-recover.sh\` from your worktree (it deletes the gate ref and re-pushes so the hook fires), then retry \`no-mistakes axi run\`.
+  The helper is idempotent and bounded; if it exits non-zero, the gate genuinely could not be recovered - only then append \`blocked: {message}\` and stop.
 
 After /no-mistakes reports CI green, append \`done: PR {url} checks green\` and stop. You are finished.
 EOF

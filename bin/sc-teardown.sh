@@ -570,8 +570,12 @@ if [ -d "$WT" ] && [ "$KIND" != secondmate ]; then
   rm -f "$WT/.claude/settings.local.json" "$WT/.opencode/plugins/sc-turn-end.js"
   # Kills remaining processes in the worktree (including the agent), resets, returns
   # to pool. treehouse resolves the pool from the working directory, so run it from
-  # the project.
-  ( cd "$PROJ" && treehouse return --force "$WT" )
+  # the project. Guarded: under set -e an unguarded failure would abort before the
+  # window kill and state cleanup below, stranding an orphaned tmux window and meta.
+  # On failure we report and continue so volatile state is still cleared.
+  if ! ( cd "$PROJ" && treehouse return --force "$WT" ); then
+    echo "warn: treehouse return failed for $WT; the pooled worktree may still be checked out - continuing teardown of window and state" >&2
+  fi
 fi
 
 tmux kill-window -t "$T" 2>/dev/null || true
