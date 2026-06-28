@@ -92,6 +92,18 @@ Each project picks how a finished change reaches `main`:
 You need a verified agent harness (claude, codex, opencode, or pi), git with GitHub auth, and tmux for the station windows.
 The Souschef detects and offers to install everything else on first run - so getting started is just launching your harness in this directory and talking to it.
 
+### One-command setup on a fresh machine
+
+On a brand-new macOS or Linux box, run the turnkey installer once:
+
+```
+./setup.sh
+```
+
+It installs everything installable - base tools (git, curl, tmux, node/npm, gh) via your OS package manager (brew on macOS; apt/dnf/pacman on Linux), the npm global tools, and the treehouse + no-mistakes installers.
+It is idempotent (safe to re-run; already-installed tools are skipped) and fails fast with a clear message if something can't be installed.
+When it finishes it prints the few steps that can't be scripted - `gh auth login`, authenticating your agent harness, and optional first-run config.
+
 See [`AGENTS.md`](AGENTS.md) for the full operating manual and the bootstrap it runs at startup.
 
 Then just talk:

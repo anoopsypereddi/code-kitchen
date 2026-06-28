@@ -19,7 +19,7 @@ TMP_ROOT=$(sc_test_tmproot sc-bootstrap-tests)
 make_fake_toolchain() {
   local dir=$1 fakebin
   fakebin=$(sc_fakebin "$dir")
-  sc_fake_exit0 "$fakebin" tmux node no-mistakes gh-axi chrome-devtools-axi lavish-axi
+  sc_fake_exit0 "$fakebin" tmux node npm git curl no-mistakes gh-axi chrome-devtools-axi lavish-axi
   cat > "$fakebin/gh" <<'SH'
 #!/usr/bin/env bash
 if [ "${1:-}" = auth ] && [ "${2:-}" = status ]; then

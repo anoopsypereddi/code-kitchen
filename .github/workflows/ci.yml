@@ -15,7 +15,29 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - run: shellcheck bin/*.sh tests/*.sh
+      - run: shellcheck bin/*.sh tests/*.sh setup.sh
+
+  parse:
+    name: Parse scripts under bash 3.2 (macOS)
+    # macOS runners ship stock bash 3.2.57, the oldest target. This catches the
+    # class of parse bug (e.g. here-docs nested in $()) that bash 5 accepts but
+    # 3.2 rejects, so a fresh-Mac dispatch blocker can never silently return.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: bash -n every script under bash 3.2
+        run: |
+          set -eu
+          bash --version | head -1
+          fail=0
+          for f in bin/*.sh setup.sh; do
+            [ -e "$f" ] || continue
+            if ! bash -n "$f"; then
+              echo "::error file=$f::fails bash -n under $(bash --version | head -1)"
+              fail=1
+            fi
+          done
+          exit "$fail"
 
   tests:
     name: Behavior tests
