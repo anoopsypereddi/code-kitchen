@@ -99,4 +99,13 @@ SC_CRASH_BACKOFF=60                # seconds to wait after crossing the crash th
 SC_CRASH_NORMAL_SLEEP=5            # seconds to wait after an isolated pass crash
 SC_LOG_MAX_BYTES=1048576           # daemon log size that triggers trimming
 SC_LOG_KEEP_LINES=2000             # daemon log lines kept when trimming
+# optional containerized kitchen (bin/sc-container.sh); opt-in, see docs/containerization.md
+SC_CONTAINER_RUNTIME=docker        # container runtime CLI (docker, or Colima exposing the docker API)
+SC_CONTAINER_IMAGE=code-kitchen:latest   # built image tag
+SC_CONTAINER_NAME=code-kitchen     # container name
+SC_HARNESS=claude                  # harness CLI baked into and launched in the container
+SC_SECRETS_ENV=~/.config/code-kitchen/secrets.env   # host-side --env-file (GH_TOKEN, GIT_AUTHOR_*, API keys)
+SC_VOL_HOME=ck_home                # named volume for the kitchen home
+SC_VOL_TREEHOUSE=ck_treehouse      # named volume for the treehouse worktree pool
+SC_VOL_NOMISTAKES=ck_nomistakes    # named volume for the no-mistakes gate state
 ```
