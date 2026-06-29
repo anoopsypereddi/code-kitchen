@@ -366,7 +366,9 @@ A service ticket's path from `done` to landed on `main` is set by the project's 
 When reviewing any cook branch diff, use `bin/sc-review-diff.sh <id>` rather than `git diff <default>...branch` directly.
 Pooled clones keep their local default refs frozen at clone time and can lag `origin`; the helper always compares against the authoritative base.
 
-**yolo (orthogonal).** With `yolo=off` (default) every approval is the Chef's: ask-user findings, PR merges, the local-only merge. With `yolo=on`, Souschef makes those calls itself without asking - resolve ask-user findings on your judgment, and run `gh-axi pr merge` / `bin/sc-merge-local.sh` once the work is green/approved - EXCEPT anything destructive, irreversible, or security-sensitive, which still escalates to the Chef. Never merge a red PR even under yolo. After any merge you perform without asking the Chef, post a one-line "merged <full PR URL or local main> after checks passed" FYI so the Chef keeps a trail.
+**Ship the project's way (`bin/sc-ship.sh <id>`).** Different projects land PRs differently, so never assume one merge command. `bin/sc-ship.sh <id>` is the single ship entry point: it auto-detects the PR base branch's merge mechanism and uses the right one - **enqueue** into a GitHub merge queue (via GraphQL `enqueuePullRequest`) when the base branch has one, a plain `gh pr merge --squash --delete-branch` when it does not, or a local fast-forward (delegating to `bin/sc-merge-local.sh`) for `local-only`. Detection queries `Repository.mergeQueue(branch:)` - no per-repo config; an optional `ship=<queue|squash|local>` token inside the project's registry bracket can pin it if ever needed. It ships only a GREEN PR (open, not draft, checks passing) and NEVER uses `--admin` or bypasses branch protection - a queue-protected PR is enqueued, never force-merged. Enqueuing counts as shipping: it prints `queued ... position N`, and `sc-pr-check`'s poll still detects the eventual merge for teardown. This does not relax prime directives: run it only on the Chef's explicit word or under `yolo` (below).
+
+**yolo (orthogonal).** With `yolo=off` (default) every approval is the Chef's: ask-user findings, PR merges, the local-only merge. With `yolo=on`, Souschef makes those calls itself without asking - resolve ask-user findings on your judgment, and run `bin/sc-ship.sh <id>` once the work is green/approved (it auto-picks the merge mechanism) - EXCEPT anything destructive, irreversible, or security-sensitive, which still escalates to the Chef. Never ship a red PR even under yolo. After any merge or enqueue you perform without asking the Chef, post a one-line "merged <full PR URL or local main> after checks passed" (or "queued <full PR URL> after checks passed") FYI so the Chef keeps a trail.
 
 ### Validate
 
@@ -393,7 +395,7 @@ Run `bin/sc-pr-check.sh <id> <PR url>` - it records `pr=` and a verified `pr_hea
 Tell the Chef: the PR's full URL (always the complete `https://...` link, never a bare `#number` - the Chef's terminal makes a full URL clickable), a one-paragraph summary, and, for `no-mistakes`, the risk level it emitted.
 (The check contract, for any custom `state/<id>.check.sh` you write yourself: print one line only when Souschef should wake, print nothing otherwise, and finish before `SC_CHECK_TIMEOUT`.)
 
-If the Chef says "merge it", run `gh-axi pr merge` yourself; that instruction is the explicit approval. If `yolo=on`, merge a green/approved PR yourself and post the required FYI.
+If the Chef says "merge it", run `bin/sc-ship.sh <id>` yourself; that instruction is the explicit approval, and the helper picks the project's correct merge mechanism (squash, merge-queue enqueue, or local fast-forward). If `yolo=on`, ship a green/approved PR with `bin/sc-ship.sh <id>` yourself and post the required FYI.
 
 ### Service 86 (only after merge is confirmed)
 
