@@ -96,6 +96,21 @@ window_kind() {
   echo unknown
 }
 
+# Is the window's ticket a prep cook held warm after reporting done? Souschef sets
+# held=warm in the meta when it keeps a finished scout alive for Chef follow-ups
+# (section 7). Such a pane is intentionally idle, so stale detection must skip it.
+window_held_warm() {
+  local w=$1 meta mw
+  for meta in "$STATE"/*.meta; do
+    [ -e "$meta" ] || continue
+    mw=$(grep '^window=' "$meta" | cut -d= -f2- || true)
+    [ "$mw" = "$w" ] || continue
+    grep -qx 'held=warm' "$meta" && return 0
+    return 1
+  done
+  return 1
+}
+
 recorded_windows() {
   local meta w seen=
   for meta in "$STATE"/*.meta; do
@@ -240,6 +255,10 @@ EOF
     # A secondmate idling on its own watcher is healthy. Its parent supervises
     # it through status writes and heartbeats, not pane-idle staleness.
     [ "$(window_kind "$w")" = secondmate ] && continue
+    # A prep cook held warm after `done` (held=warm in its meta) is likewise a
+    # healthy idle pane: it is kept alive for Chef follow-ups against its loaded
+    # context until an explicit 86 or promote, so do not flag it stale.
+    window_held_warm "$w" && continue
     tail40=$(tmux capture-pane -p -t "$w" -S -40 2>/dev/null) || continue
     h=$(printf '%s' "$tail40" | hash_pane)
     key=$(printf '%s' "$w" | tr ':/.' '___')

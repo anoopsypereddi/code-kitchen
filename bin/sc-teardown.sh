@@ -509,6 +509,7 @@ if [ -d "$WT" ] && [ "$FORCE" != "--force" ]; then
     if [ ! -f "$REPORT" ]; then
       echo "REFUSED: scout task $ID has no report at $REPORT." >&2
       echo "The report is the work product. Have the crewmate write it (or get the captain's explicit OK to discard, then --force)." >&2
+      echo "(Prep cooks are held warm for follow-ups; 86 only once the captain is done, or promote with sc-promote.sh - the report survives either way.)" >&2
       exit 1
     fi
   else
