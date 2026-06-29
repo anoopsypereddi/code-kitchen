@@ -3,8 +3,8 @@
 # suites (sc-secondmate-lifecycle-e2e and sc-secondmate-safety).
 #
 # These mocks encode secondmate-lifecycle behavior (fake tmux that logs window
-# ops, fake treehouse that leases/returns homes, fake no-mistakes that records
-# init/doctor), so they live here rather than in the generic tests/lib.sh. The
+# ops, fake sc-worktree.sh that leases/returns homes, fake no-mistakes that
+# records init/doctor), so they live here rather than in the generic tests/lib.sh. The
 # generic git/identity/meta primitives come from lib.sh, which this file pulls in.
 
 # shellcheck source=tests/lib.sh
@@ -12,9 +12,11 @@
 
 # A fake tmux (window ops are logged to SC_FAKE_TMUX_LOG, list-windows returns
 # SC_FAKE_TMUX_WINDOW, capture-pane echoes SC_FAKE_TMUX_CAPTURE) plus a fake
-# treehouse (durable lease of SC_FAKE_TREEHOUSE_HOME, recording the lease holder
-# to SC_FAKE_TREEHOUSE_LEASE_FILE; `return` removes the target and lease unless
-# SC_FAKE_TREEHOUSE_RETURN_FAIL is set). Echoes the fakebin dir.
+# sc-worktree.sh (durable lease of SC_FAKE_TREEHOUSE_HOME, recording the lease
+# holder to SC_FAKE_TREEHOUSE_LEASE_FILE; `return` removes the target and lease
+# unless SC_FAKE_TREEHOUSE_RETURN_FAIL is set). The fake lives at
+# $fakebin/sc-worktree.sh; point callers at it with SC_WORKTREE_BIN. Echoes the
+# fakebin dir.
 make_fake_tmux() {
   local dir=$1 fakebin capture
   fakebin=$(sc_fakebin "$dir")
@@ -46,10 +48,10 @@ case "${1:-}" in
 esac
 exit 1
 SH
-  cat > "$fakebin/treehouse" <<'SH'
+  cat > "$fakebin/sc-worktree.sh" <<'SH'
 #!/usr/bin/env bash
 set -u
-printf 'treehouse %s\n' "$*" >> "${SC_FAKE_TMUX_LOG:-/dev/null}"
+printf 'sc-worktree %s\n' "$*" >> "${SC_FAKE_TMUX_LOG:-/dev/null}"
 case "${1:-}" in
   get)
     # Durable lease: print only the worktree path to stdout (banners to stderr),
@@ -61,6 +63,8 @@ case "${1:-}" in
         --lease) ;;
         --lease-holder) shift; holder=${1:-} ;;
         --lease-holder=*) holder=${1#--lease-holder=} ;;
+        --repo) shift ;;
+        --repo=*) ;;
       esac
       shift
     done
@@ -91,7 +95,7 @@ esac
 exit 0
 SH
   chmod +x "$fakebin/tmux"
-  chmod +x "$fakebin/treehouse"
+  chmod +x "$fakebin/sc-worktree.sh"
   : > "$dir/tmux.log"
   printf '%s\n' "$fakebin"
 }

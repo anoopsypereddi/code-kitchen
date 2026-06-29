@@ -11,9 +11,9 @@
 #
 # Storage is three NAMED volumes (no host bind mounts, so there is no host path
 # to widen and nothing on the host tree to leak): the kitchen home, the
-# treehouse worktree pool (~/.treehouse), and the no-mistakes store
-# (~/.no-mistakes). treehouse builds the pool FRESH inside the container at its
-# fixed path - never seeded from the host pool, whose absolute gitdir links would
+# git worktree pool (~/.sc-worktrees, managed by bin/sc-worktree.sh), and the
+# no-mistakes store (~/.no-mistakes). The worktree pool is built FRESH inside the
+# container - never seeded from the host pool, whose absolute gitdir links would
 # dangle. Secrets arrive only via --env-file.
 #
 # Usage:
@@ -36,10 +36,10 @@ SECRETS_ENV="${SC_SECRETS_ENV:-$HOME/.config/code-kitchen/secrets.env}"
 # Named volumes (not host paths). The mount points inside the container are the
 # tools' fixed default paths so absolute links stay internally consistent.
 VOL_HOME="${SC_VOL_HOME:-ck_home}"
-VOL_TREEHOUSE="${SC_VOL_TREEHOUSE:-ck_treehouse}"
+VOL_WORKTREES="${SC_VOL_WORKTREES:-${SC_VOL_TREEHOUSE:-ck_worktrees}}"
 VOL_NOMISTAKES="${SC_VOL_NOMISTAKES:-ck_nomistakes}"
 MOUNT_HOME=/home/chef/kitchen
-MOUNT_TREEHOUSE=/home/chef/.treehouse
+MOUNT_WORKTREES=/home/chef/.sc-worktrees
 MOUNT_NOMISTAKES=/home/chef/.no-mistakes
 
 die() { echo "error: $*" >&2; exit 1; }
@@ -67,8 +67,9 @@ case "$cmd" in
     # started the no-mistakes daemon, configured git, and run bootstrap by then.
     "$RUNTIME" run -d --name "$NAME" \
       -v "$VOL_HOME:$MOUNT_HOME" \
-      -v "$VOL_TREEHOUSE:$MOUNT_TREEHOUSE" \
+      -v "$VOL_WORKTREES:$MOUNT_WORKTREES" \
       -v "$VOL_NOMISTAKES:$MOUNT_NOMISTAKES" \
+      -e "SC_WORKTREE_ROOT=$MOUNT_WORKTREES" \
       --env-file "$SECRETS_ENV" \
       "$IMAGE" sleep infinity
     echo "up: container '$NAME' running. Attach with: $(basename "$0") shell"
@@ -83,13 +84,13 @@ case "$cmd" in
   down)
     "$RUNTIME" stop "$NAME" >/dev/null 2>&1 || true
     "$RUNTIME" rm "$NAME" >/dev/null 2>&1 || true
-    echo "down: container '$NAME' removed. Named volumes ($VOL_HOME, $VOL_TREEHOUSE, $VOL_NOMISTAKES) persist; 'up' resumes the kitchen."
+    echo "down: container '$NAME' removed. Named volumes ($VOL_HOME, $VOL_WORKTREES, $VOL_NOMISTAKES) persist; 'up' resumes the kitchen."
     ;;
 
   nuke)
     "$RUNTIME" rm -f "$NAME" >/dev/null 2>&1 || true
-    "$RUNTIME" volume rm "$VOL_HOME" "$VOL_TREEHOUSE" "$VOL_NOMISTAKES" >/dev/null 2>&1 || true
-    echo "nuke: container '$NAME' and volumes ($VOL_HOME, $VOL_TREEHOUSE, $VOL_NOMISTAKES) removed."
+    "$RUNTIME" volume rm "$VOL_HOME" "$VOL_WORKTREES" "$VOL_NOMISTAKES" >/dev/null 2>&1 || true
+    echo "nuke: container '$NAME' and volumes ($VOL_HOME, $VOL_WORKTREES, $VOL_NOMISTAKES) removed."
     ;;
 
   ""|-h|--help|help)

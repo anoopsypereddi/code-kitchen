@@ -67,39 +67,22 @@ else
   echo "skipped: tasks-axi not installable (optional; the brigade falls back to hand-edited backlog)."
 fi
 
-# 3. Org installers (treehouse, no-mistakes), via sc-bootstrap's curl-pipe URLs.
-say "Org tools (treehouse, no-mistakes)"
-need=""
-for t in treehouse no-mistakes; do
-  have "$t" || need="$need $t"
-done
-if [ -n "$need" ]; then
-  echo "installing:$need"
-  # shellcheck disable=SC2086  # word-splitting of the tool list is intended
-  "$BOOT" install $need
-else
+# 3. Org installer (no-mistakes), via sc-bootstrap's curl-pipe URL. Worktrees are
+#    managed by code-kitchen's own bin/sc-worktree.sh (git worktree), so there is
+#    no third-party worktree tool to install.
+say "Org tools (no-mistakes)"
+if have no-mistakes; then
   echo "all present, skipping."
-fi
-
-# 4. Verify treehouse advertises --lease (the brigade requires it).
-say "treehouse --lease support"
-if have treehouse; then
-  if treehouse get --help 2>&1 | grep -Eq '(^|[^[:alnum:]_-])--lease([^[:alnum:]_-]|$)'; then
-    echo "ok."
-  else
-    echo "warning: installed treehouse lacks --lease support; re-run its installer to upgrade:" >&2
-    echo "  curl -fsSL https://kunchenguid.github.io/treehouse/install.sh | sh" >&2
-  fi
 else
-  echo "error: treehouse still not installed; cannot verify --lease support" >&2
-  exit 1
+  echo "installing: no-mistakes"
+  "$BOOT" install no-mistakes
 fi
 
-# 5. Re-run detection so any remaining gaps surface now, not at first dispatch.
+# 4. Re-run detection so any remaining gaps surface now, not at first dispatch.
 say "Bootstrap detection (remaining gaps, if any)"
 "$BOOT" || true
 
-# 6. The manual steps that cannot be scripted.
+# 5. The manual steps that cannot be scripted.
 cat <<'MANUAL'
 
 ============================================================

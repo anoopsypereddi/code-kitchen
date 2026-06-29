@@ -68,7 +68,7 @@ A restart is a non-event: all state lives on disk and in tmux, so the line picks
 code-kitchen doesn't reinvent the tools - it conducts them:
 
 - **tmux** - every Cook works in its own visible window you can watch or jump into.
-- **git** + **[treehouse](https://github.com/kunchenguid/treehouse)** - each station is an isolated worktree, so parallel work on one repo never steps on itself.
+- **git** - each station is an isolated git worktree (carved and torn down by code-kitchen's own `bin/sc-worktree.sh`), so parallel work on one repo never steps on itself.
 - **gh** - GitHub operations (PRs, issues, CI) run through the `gh-axi` helper.
 - **no-mistakes** - the validation gate a change passes through before it can ship: automated review, tests, lint, docs, and CI.
 - **your agent harness** - claude, codex, opencode, or pi; the Souschef spawns Cooks on the same harness you run.
@@ -100,7 +100,7 @@ On a brand-new macOS or Linux box, run the turnkey installer once:
 ./setup.sh
 ```
 
-It installs everything installable - base tools (git, curl, tmux, node/npm, gh) via your OS package manager (brew on macOS; apt/dnf/pacman on Linux), the npm global tools, and the treehouse + no-mistakes installers.
+It installs everything installable - base tools (git, curl, tmux, node/npm, gh) via your OS package manager (brew on macOS; apt/dnf/pacman on Linux), the npm global tools, and the no-mistakes installer. (Worktrees are managed by the built-in `bin/sc-worktree.sh`, so there is no separate worktree tool to install.)
 It is idempotent (safe to re-run; already-installed tools are skipped) and fails fast with a clear message if something can't be installed.
 When it finishes it prints the few steps that can't be scripted - `gh auth login`, authenticating your agent harness, and optional first-run config.
 

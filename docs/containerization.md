@@ -27,7 +27,7 @@ accidentally widen and nothing on your host tree to leak.
 | Volume         | Container path          | Holds                                  |
 | -------------- | ----------------------- | -------------------------------------- |
 | `ck_home`      | `/home/chef/kitchen`    | the kitchen home (`projects/`, `data/`, `state/`, `config/`, `bin/`, `AGENTS.md`) |
-| `ck_treehouse` | `/home/chef/.treehouse` | the treehouse worktree pool            |
+| `ck_worktrees` | `/home/chef/.sc-worktrees` | the git worktree pool (managed by `bin/sc-worktree.sh`) |
 | `ck_nomistakes`| `/home/chef/.no-mistakes` | the no-mistakes gate state (daemon, sqlite, bare repos) |
 
 Plus a **read-only secrets drop via `--env-file`** (see below).
@@ -35,15 +35,16 @@ Plus a **read-only secrets drop via `--env-file`** (see below).
 **Never mounted:** your host home, any host dotfile, any SSH/GPG/cloud/`gh`
 credential, any sibling repo, your host's `claude`/harness credentials.
 
-### The treehouse pool is built fresh inside
+### The worktree pool is built fresh inside
 
-treehouse records **absolute** paths for every worktree, and a worktree's `.git`
-is a file pointing at an absolute gitdir. So you **cannot** seed the container's
-pool from your host's `~/.treehouse` — the absolute links would dangle. Instead,
-treehouse builds the pool **fresh inside the container** at the fixed path
-`/home/chef/.treehouse`, and projects are cloned inside. Don't relocate that
-mount point across restarts. This also helps confidentiality: the host's
-`~/.treehouse` (which references host project paths) is never mounted in.
+A git worktree's `.git` is a file pointing at an **absolute** gitdir in its
+backing repo. So you **cannot** seed the container's pool from your host's
+`~/.sc-worktrees` — the absolute links would dangle. Instead the pool is built
+**fresh inside the container** at the fixed path `/home/chef/.sc-worktrees`
+(`sc-container.sh` sets `SC_WORKTREE_ROOT` to it), and projects are cloned
+inside. Don't relocate that mount point across restarts. This also helps
+confidentiality: the host's `~/.sc-worktrees` (which references host project
+paths) is never mounted in.
 
 The first time you bring the container up, its `ck_home` volume is empty — clone
 the kitchen repo into it (or populate it however you prefer) so

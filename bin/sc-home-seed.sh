@@ -4,10 +4,10 @@
 # Usage:
 #   sc-home-seed.sh <id> <home|-> <project>...
 #       Provision <home> as an isolated souschef home. If <home> is "-", acquire
-#       a fresh souschef worktree via "treehouse get --lease", which durably
+#       a fresh souschef worktree via "sc-worktree.sh get --lease", which durably
 #       leases the worktree under the secondmate <id> so the home survives with
 #       no live process and is never recycled until the lease is released with
-#       "treehouse return". Projects are cloned
+#       "sc-worktree.sh return". Projects are cloned
 #       from the active home into the secondmate home's projects/ directory.
 #       That project list is non-exclusive provisioning data. The charter brief
 #       is copied to data/charter.md, newly cloned no-mistakes projects are
@@ -15,8 +15,8 @@
 #       data/secondmates.md is updated.
 #       Seeding is transactional: on validation, clone, init, or registry failure,
 #       generated briefs, new homes, new project clones, and registry edits are
-#       rolled back. Treehouse-acquired homes are returned only when the rollback
-#       target is safe; a failed return warns because the lease may still be held.
+#       rolled back. Leased homes are returned only when the rollback target is
+#       safe; a failed return warns because the lease may still be held.
 #       Set SC_SECONDMATE_CHARTER='<charter>' to seed from inline charter text
 #       when no filled charter brief exists. Set SC_SECONDMATE_SCOPE='<scope>'
 #       to override the registry routing scope. Otherwise the registry summary
@@ -29,6 +29,8 @@ set -eu
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SC_ROOT="${SC_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 SC_HOME="${SC_HOME:-${SC_ROOT_OVERRIDE:-$SC_ROOT}}"
+# The native worktree manager; overridable so tests can inject a fake.
+SC_WORKTREE="${SC_WORKTREE_BIN:-$SC_ROOT/bin/sc-worktree.sh}"
 DATA="${SC_DATA_OVERRIDE:-$SC_HOME/data}"
 PROJECTS="${SC_PROJECTS_OVERRIDE:-$SC_HOME/projects}"
 REG="$DATA/secondmates.md"
@@ -461,15 +463,15 @@ seeded_origin_url() {
 
 acquire_treehouse_home() {
   local id=$1 home
-  # Durably lease a souschef worktree from the pool. The lease persists with no
-  # live process and is skipped by later get/prune, so the home survives restarts
-  # until teardown or rollback returns it. treehouse prints only the worktree path
-  # to stdout (banners go to stderr), so command substitution captures the path.
-  home=$(cd "$SC_ROOT" && treehouse get --lease --lease-holder "$id") || {
-    echo "error: treehouse get --lease failed to lease a souschef home" >&2
+  # Durably lease a souschef worktree (bin/sc-worktree.sh). The lease persists with
+  # no live process and is skipped by prune, so the home survives restarts until
+  # teardown or rollback returns it. sc-worktree prints only the worktree path to
+  # stdout (banners go to stderr), so command substitution captures the path.
+  home=$("$SC_WORKTREE" get --lease --lease-holder "$id" --repo "$SC_ROOT") || {
+    echo "error: sc-worktree get --lease failed to lease a souschef home" >&2
     return 1
   }
-  [ -n "$home" ] || { echo "error: treehouse get --lease did not report a souschef home" >&2; return 1; }
+  [ -n "$home" ] || { echo "error: sc-worktree get --lease did not report a souschef home" >&2; return 1; }
   printf '%s\n' "$home"
 }
 
@@ -634,13 +636,9 @@ seed_rollback_target() {
 
 seed_return_treehouse_home() {
   local home=$1 abs_home
-  abs_home=$(seed_rollback_target "$home" "treehouse-acquired home") || return 0
-  if ! command -v treehouse >/dev/null 2>&1; then
-    echo "warning: failed to return treehouse-acquired home $abs_home during seed rollback; treehouse command not found" >&2
-    return 0
-  fi
-  ( cd "$SC_ROOT" && treehouse return --force "$abs_home" >/dev/null ) || {
-    echo "warning: failed to return treehouse-acquired home $abs_home during seed rollback; lease may still be held" >&2
+  abs_home=$(seed_rollback_target "$home" "leased home") || return 0
+  "$SC_WORKTREE" return --force "$abs_home" >/dev/null || {
+    echo "warning: failed to return leased home $abs_home during seed rollback; lease may still be held" >&2
     return 0
   }
 }

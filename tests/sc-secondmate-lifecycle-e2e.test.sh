@@ -55,7 +55,7 @@ EOF
   ALPHA_ORIGIN=$(git -C "$HOME_DIR/projects/alpha" remote get-url origin)
   BETA_ORIGIN=$(git -C "$HOME_DIR/projects/beta" remote get-url origin)
 
-  # One combined fakebin: tmux + treehouse (spawn/send/teardown) and no-mistakes
+  # One combined fakebin: tmux + sc-worktree (spawn/send/teardown) and no-mistakes
   # (gamma initialization during seed).
   FAKEBIN=$(make_fake_tmux "$TMP_ROOT/fake")
   make_fake_no_mistakes "$TMP_ROOT/fake" >/dev/null
@@ -121,14 +121,14 @@ phase_spawn() {
   assert_grep "home=$SUB_ABS" "$meta" "spawn meta did not record the subhome"
   assert_grep 'projects=alpha, beta, gamma' "$meta" "spawn meta did not record the project list"
   # Launch ran in the subhome, with the persistent charter and cleared overrides,
-  # and never ran a project-style treehouse get.
+  # and never carved a project-style worktree.
   assert_grep "SC_HOME='$SUB_ABS'" "$LOG" "secondmate launch did not set SC_HOME to the subhome"
   assert_grep 'SC_ROOT_OVERRIDE= SC_STATE_OVERRIDE= SC_DATA_OVERRIDE= SC_PROJECTS_OVERRIDE=' "$LOG" "launch did not clear operational overrides"
   assert_grep 'SC_CONFIG_OVERRIDE=' "$LOG" "launch did not clear the config override"
   assert_grep "$SUB_ABS/data/charter.md" "$LOG" "launch did not use the persistent charter"
   assert_no_grep 'notify=' "$LOG" "secondmate codex launch included the parent turn-end notify hook"
   assert_no_grep 'turn-ended' "$LOG" "secondmate codex launch referenced a parent turn-ended signal"
-  assert_no_grep 'treehouse get' "$LOG" "secondmate spawn ran a project treehouse get"
+  assert_no_grep 'sc-worktree get' "$LOG" "secondmate spawn carved a project worktree"
   pass "spawn: launches in the subhome with persistent charter, records routing meta"
 }
 

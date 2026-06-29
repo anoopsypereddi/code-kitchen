@@ -3,7 +3,7 @@
 #
 # Mechanical half of the /updatesouschef skill. Fast-forwards the running
 # souschef repo's default branch from origin, then fast-forwards every
-# registered secondmate home (each a treehouse worktree of this same repo, or
+# registered secondmate home (each a git worktree of this same repo, or
 # a standalone clone) the same way. FAST-FORWARD ONLY, exactly like
 # sc-fleet-sync.sh: never force, never create a merge commit, never stash;
 # advance a target only when it is a clean fast-forward, otherwise skip and

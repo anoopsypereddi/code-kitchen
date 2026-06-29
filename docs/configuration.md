@@ -23,7 +23,7 @@ Each line records the station chef id, charter summary, absolute home path, natu
 The main Souschef routes by reading those scopes with judgment; the project list is provisioning data, not exclusive ownership.
 Use `sc-home-seed.sh <id> - <project>...` to lease a fresh Souschef worktree for the station chef home.
 The lease is held under the station chef id until explicit retirement or seed rollback returns it, so normal restarts do not free or recycle the home.
-86 of a leased home fails closed if `treehouse return` cannot release the lease; plain-clone homes with no treehouse pool slot are removed directly.
+86 of a leased home fails closed if `sc-worktree.sh return` cannot release the lease; plain-clone homes that are not a managed worktree are removed directly.
 Station chef routes cover `no-mistakes` and `direct-PR` projects; `local-only` projects remain main-Souschef work.
 For `no-mistakes` projects, seeding initializes only projects newly cloned into a station chef home and refuses to mutate a preexisting clone that is not already initialized.
 After creating a station chef, move existing main-backlog items that you have judged in-scope with `sc-backlog-handoff.sh <secondmate-id> <item-key>...`; it is idempotent and refuses in-flight items or non-station-chef homes.
@@ -45,7 +45,7 @@ Launch mechanics, including the verified command templates, live in [`bin/sc-spa
 
 ## Toolchain
 
-On first launch the sous-chef detects what its required toolchain is missing or too old (tmux, node, gh, treehouse with durable lease support, no-mistakes, gh-axi, chrome-devtools-axi, lavish-axi), lists it with the exact install commands, and installs only after you say go.
+On first launch the sous-chef detects what its required toolchain is missing or too old (tmux, node, gh, git, curl, no-mistakes, gh-axi, chrome-devtools-axi, lavish-axi), lists it with the exact install commands, and installs only after you say go. (Worktrees are managed by the built-in `bin/sc-worktree.sh` on plain `git worktree`, so there is no third-party worktree tool to detect.)
 If compatible `tasks-axi` is already on `PATH`, bootstrap records it as an optional capability fact and Souschef uses its verbs for routine backlog mutations; when it is absent or incompatible, Souschef keeps hand-editing `data/backlog.md` exactly as before.
 Bootstrap also reports a `TANGLE:` line when `SC_ROOT` is on a named non-default branch; follow the printed checkout remediation rather than treating it as an installable tool problem.
 Bootstrap also runs the guarded local station chef sync for recorded live station chef homes.
@@ -106,6 +106,6 @@ SC_CONTAINER_NAME=code-kitchen     # container name
 SC_HARNESS=claude                  # harness CLI baked into and launched in the container
 SC_SECRETS_ENV=~/.config/code-kitchen/secrets.env   # host-side --env-file (GH_TOKEN, GIT_AUTHOR_*, API keys)
 SC_VOL_HOME=ck_home                # named volume for the kitchen home
-SC_VOL_TREEHOUSE=ck_treehouse      # named volume for the treehouse worktree pool
+SC_VOL_WORKTREES=ck_worktrees      # named volume for the git worktree pool (~/.sc-worktrees)
 SC_VOL_NOMISTAKES=ck_nomistakes    # named volume for the no-mistakes gate state
 ```

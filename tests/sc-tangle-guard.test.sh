@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Behavior tests for the worktree-tangle guards.
 #
-# Souschef is a treehouse-pooled git repo of itself: linked worktrees and
+# Souschef is a self-hosted git repo (it worktrees itself): linked worktrees and
 # secondmate homes all sit at a detached HEAD on the default branch, while the
 # PRIMARY checkout (SC_ROOT) is a normal checkout on a real branch. The "tangle"
 # is a crewmate branching/committing in the primary instead of its own worktree,
@@ -141,9 +141,11 @@ test_brief_assertion_precedes_branch() {
 
 # --- GUARD 1b: sc-spawn isolation abort -------------------------------------
 
-# A fake tmux that reports SC_FAKE_PANE_PATH as the post-`treehouse get` pane cwd
-# (so the spawn's worktree-resolution loop resolves to a path we control), names
-# the session on '#S', and swallows window ops. Echoes the fakebin dir.
+# A fake sc-worktree.sh whose `get` prints SC_FAKE_WT_PATH (the worktree path we
+# want the isolation guard to validate) and whose `return` is a quiet no-op, plus
+# a fake tmux that reports SC_FAKE_WT_PATH as the pane cwd (so spawn's post-`cd`
+# settle loop returns at once), names the session on '#S', and swallows window
+# ops. Echoes the fakebin dir; point spawn at the fake with SC_WORKTREE_BIN.
 make_spawn_fakebin() {
   local dir=$1 fakebin
   fakebin=$(sc_fakebin "$dir")
@@ -151,7 +153,7 @@ make_spawn_fakebin() {
 #!/usr/bin/env bash
 set -u
 case "$*" in
-  *"#{pane_current_path}"*) printf '%s\n' "${SC_FAKE_PANE_PATH:-}"; exit 0 ;;
+  *"#{pane_current_path}"*) printf '%s\n' "${SC_FAKE_WT_PATH:-}"; exit 0 ;;
 esac
 case "${1:-}" in
   display-message) printf 'souschef\n'; exit 0 ;;
@@ -161,7 +163,16 @@ esac
 exit 0
 SH
   chmod +x "$fakebin/tmux"
-  sc_fake_exit0 "$fakebin" treehouse
+  cat > "$fakebin/sc-worktree.sh" <<'SH'
+#!/usr/bin/env bash
+set -u
+case "${1:-}" in
+  get) printf '%s\n' "${SC_FAKE_WT_PATH:-}" ;;  # path on stdout, deterministic
+  return) : ;;                                  # quiet no-op (abort releases lease)
+esac
+exit 0
+SH
+  chmod +x "$fakebin/sc-worktree.sh"
   printf '%s\n' "$fakebin"
 }
 
@@ -172,7 +183,8 @@ run_spawn() {
   SC_ROOT_OVERRIDE='' SC_HOME="$home" \
     SC_STATE_OVERRIDE="$home/state" SC_DATA_OVERRIDE="$home/data" \
     SC_PROJECTS_OVERRIDE="$home/projects" SC_CONFIG_OVERRIDE="$home/config" \
-    SC_SPAWN_NO_GUARD=1 SC_FAKE_PANE_PATH="$pane" TMUX="fake,1,0" \
+    SC_SPAWN_NO_GUARD=1 SC_FAKE_WT_PATH="$pane" TMUX="fake,1,0" \
+    SC_WORKTREE_BIN="$fakebin/sc-worktree.sh" \
     PATH="$fakebin:$PATH" \
     "$ROOT/bin/sc-spawn.sh" "$id" "$proj" codex 2>&1
 }

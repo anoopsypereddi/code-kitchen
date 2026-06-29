@@ -113,7 +113,6 @@ Silence means all good: say nothing and move on.
 Otherwise it prints one line per problem or capability fact; handle each:
 
 - `MISSING: <tool> (install: <command>)` - list the missing tools to the Chef with a one-line purpose each plus the printed install commands, wait for consent (one approval may cover the list), then run `bin/sc-bootstrap.sh install <approved tools...>`.
-  For `treehouse`, this also covers an installed version whose `treehouse get` lacks `--lease`; treat it as an upgrade request.
 - `NEEDS_GH_AUTH` - ask the Chef to run `! gh auth login` (interactive; you cannot run it for them).
 - `TANGLE: <remediation>` - the Souschef primary checkout (the repo root, `SC_ROOT`) is stranded on a feature branch instead of its default branch: a cook working Souschef-on-itself branched/committed in the primary instead of its own isolated worktree (section 8). The work is safe on that branch ref; restore the primary to its default branch with the printed `git -C <root> checkout <default>`, then re-validate that branch in a proper worktree. This is the only sanctioned Souschef-initiated git write to the primary, and it is a non-destructive branch switch that strands nothing.
 - `CREW_HARNESS_OVERRIDE: <name>` - record and use the override silently; surface a harness fact only if it actually blocks work or the Chef asks.
@@ -166,7 +165,7 @@ Reconcile reality with your records before doing anything else:
    Do not sweep every `sc-*` tmux window across all sessions during recovery; another Souschef home's child panes may share that namespace and are not this home's orphans.
 5. If a recorded direct-report window is missing, reconcile it through its meta as described below.
 6. For meta with no window, reconcile by kind.
-   For ordinary cooks, check `treehouse status` in that project, salvage or report.
+   For ordinary cooks, check `bin/sc-worktree.sh status` in that project, salvage or report.
    For `kind=secondmate`, load `station-chef-provisioning`, treat it as a dead persistent direct report, and re-fire it from recorded meta or the registry entry.
 7. Do not reconstruct a station chef's whole tree from the main home.
    The main Souschef reconciles only direct reports.
@@ -177,7 +176,7 @@ Reconcile reality with your records before doing anything else:
 10. Handle drained wakes, then follow the section 8 pass checklist; if `state/.afk` exists, the daemon owns the pass.
 
 A Souschef restart must be a non-event.
-All truth lives in tmux, state files, data/backlog.md, data/secondmates.md, persistent station chef homes, and treehouse; your conversation memory is a cache.
+All truth lives in tmux, state files, data/backlog.md, data/secondmates.md, persistent station chef homes, and the git worktrees themselves; your conversation memory is a cache.
 
 ## 6. Project management
 
@@ -333,9 +332,9 @@ Fire several tickets in one call by passing `id=repo` pairs instead of a single 
 If one pair fails, the rest still run and the batch exits non-zero.
 
 The script resolves the harness (`sc-harness.sh crew`), owns the verified launch templates, resolves the project's delivery mode (`sc-project-mode.sh`) for service/prep tickets, and records `harness=`, `kind=`, `mode=`, and `yolo=` in the ticket's meta; a non-flag third argument containing whitespace is treated as a raw launch command (only for verifying new adapters).
-For `kind=secondmate`, the same script launches in the registered or explicit Souschef home instead of running `treehouse get` for a project, records `home=` and `projects=`, and uses the charter brief as the launch prompt.
+For `kind=secondmate`, the same script launches in the registered or explicit Souschef home instead of carving a project worktree, records `home=` and `projects=`, and uses the charter brief as the launch prompt.
 
-For service and prep tickets, the script creates the window (in your current tmux session, or a dedicated `souschef` session when you are outside tmux), fast-forwards the project clone's checked-out default branch to `origin/<default>` before carving the worktree, runs `treehouse get`, waits for the worktree subshell, asserts the resolved worktree is a genuine isolated worktree distinct from the primary checkout (aborting the fire otherwise, to prevent the worktree tangle of section 8), installs the turn-end hook, records `state/<id>.meta`, and launches the agent with the brief.
+For service and prep tickets, the script creates the window (in your current tmux session, or a dedicated `souschef` session when you are outside tmux), fast-forwards the project clone's checked-out default branch to `origin/<default>` before carving the worktree, carves an isolated worktree with `bin/sc-worktree.sh get --lease` (which prints the worktree path deterministically), drives the pane into it, asserts the resolved worktree is a genuine isolated worktree distinct from the primary checkout (aborting the fire otherwise, to prevent the worktree tangle of section 8), installs the turn-end hook, records `state/<id>.meta`, and launches the agent with the brief.
 That pre-fire clone fast-forward (via `bin/sc-fleet-sync.sh`) closes the race where a cook fired between a remote merge and the next brigade sync would otherwise start from a clone whose local default lags origin, so new worktrees start from the latest landed work.
 It is fetch-and-fast-forward only - never forcing, stashing, or discarding - and skips cleanly for a `local-only`/no-origin project, a dirty clone, a diverged or non-default checkout, or a fetch/fast-forward failure; a skip prints a concise stderr warning and still launches the cook from the unchanged checkout, and the whole step is bounded by `SC_SPAWN_SYNC_TIMEOUT` (default 20s).
 For `kind=secondmate`, the script creates the same kind of window but starts directly in the persistent home.
@@ -507,11 +506,11 @@ If a guard warning says queued wakes are pending, drain them before doing anythi
 If a guard warning says pass liveness is stale, arm `bin/sc-watch-arm.sh` after draining any queued wakes.
 
 `sc-guard.sh` carries a second, independent alarm in the same bordered ●-marked style: the **worktree-tangle** guard.
-Souschef is a treehouse-pooled git repo of itself - the primary checkout (the repo root, `SC_ROOT`) and every cook worktree and station chef home are linked worktrees of one repo - and the primary must stay on its default branch.
+Souschef is a self-hosted git repo - it worktrees itself, so the primary checkout (the repo root, `SC_ROOT`) and every cook worktree and station chef home are linked worktrees of one repo - and the primary must stay on its default branch.
 If a cook sent to work Souschef-on-itself branches or commits in the primary instead of its own isolated worktree, the primary is stranded on a feature branch (the failure this guards against); the guard names the offending branch and prints the non-destructive restore (`git -C <root> checkout <default>`), so the tangle surfaces on the very next brigade action.
 The check is scoped precisely to the primary: detached HEAD (the legitimate resting state of cook worktrees and station chef homes on the default branch) and the default branch itself never alarm; only a named non-default branch checked out in the primary does.
 The same assertion runs at session start as the bootstrap `TANGLE:` line (section 3).
-Two further guards prevent the tangle upstream: `sc-spawn` refuses to launch unless `treehouse get` yields a genuine isolated worktree distinct from the primary checkout, and every service brief's first instruction has the cook verify it is in its own worktree before branching (section 11).
+Two further guards prevent the tangle upstream: `sc-spawn` refuses to launch unless the worktree `bin/sc-worktree.sh get` returns is a genuine isolated worktree distinct from the primary checkout, and every service brief's first instruction has the cook verify it is in its own worktree before branching (section 11).
 Pass liveness is not enough if you are foreground-blocked.
 Whenever one or more tickets are in flight, do not run long foreground-blocking operations in your own session.
 This is about Souschef's own session: it includes a no-mistakes pipeline Souschef runs for this repo, long builds, and any other multi-minute command.
@@ -634,7 +633,7 @@ Map Souschef's real backlog operations to the approved commands:
 ## 11. Cook briefs
 
 Scaffold with `bin/sc-brief.sh <id> <repo-name>` - it writes `data/<id>/brief.md` with the standard contract (branch setup, status-reporting protocol, push/merge rules, definition of done) and all paths filled in.
-The service-brief Setup opens with a worktree-isolation assertion ahead of the branch step: the cook confirms it is in its own treehouse worktree, not the primary checkout, and stops with `blocked: launched in primary checkout, not an isolated worktree` if not - the upstream half of the worktree-tangle guard (section 8).
+The service-brief Setup opens with a worktree-isolation assertion ahead of the branch step: the cook confirms it is in its own isolated git worktree, not the primary checkout, and stops with `blocked: launched in primary checkout, not an isolated worktree` if not - the upstream half of the worktree-tangle guard (section 8).
 For a service ticket the definition of done is shaped by the project's delivery mode (section 6): `no-mistakes` ends in the harness-appropriate no-mistakes validation pipeline, `direct-PR` has the cook push and open the PR itself, `local-only` has it stop at "ready in branch" for Souschef to review and merge locally.
 The scaffold reads the mode via `sc-project-mode.sh`, so you do not pass it.
 Service briefs also include the project-memory contract: run `bin/sc-ensure-agents-md.sh` when the project already has agent-memory files or when the ticket produced durable project-intrinsic knowledge, then record proportionate learnings in `AGENTS.md`.

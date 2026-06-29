@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Spawn a direct report: a crewmate in a treehouse worktree, or a secondmate in
-# its isolated souschef home.
+# Spawn a direct report: a crewmate in an isolated git worktree (carved by
+# bin/sc-worktree.sh), or a secondmate in its isolated souschef home.
 # Usage: sc-spawn.sh <task-id> <project-dir> [harness|launch-command] [--scout]
 #        sc-spawn.sh <task-id> [<souschef-home>] [harness|launch-command] --secondmate
 #   With no harness arg, the harness comes from sc-harness.sh crew (config/crew-harness,
@@ -17,8 +17,8 @@
 #   from the latest landed work; this fetch+ff is skipped cleanly (warn, launch
 #   unchanged) for a local-only/no-origin project, a dirty/diverged/non-default
 #   checkout, or a fetch/ff failure, and is bounded by SC_SPAWN_SYNC_TIMEOUT (20s).
-#   Ship/scout spawns refuse to launch after treehouse get unless the resolved pane
-#   path is a real git worktree root distinct from the primary project checkout.
+#   Ship/scout spawns refuse to launch unless the worktree sc-worktree.sh returns
+#   is a real git worktree root distinct from the primary project checkout.
 # Batch dispatch: pass one or more `id=repo` pairs instead of a single <id> <project>, e.g.
 #     sc-spawn.sh fix-a-k3=projects/foo add-b-q7=projects/bar [--scout]
 #   Each pair re-execs this script in single-task mode, so the single path stays the only
@@ -40,6 +40,8 @@ set -eu
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SC_ROOT="${SC_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 SC_HOME="${SC_HOME:-${SC_ROOT_OVERRIDE:-$SC_ROOT}}"
+# The native worktree manager; overridable so tests can inject a fake.
+SC_WORKTREE="${SC_WORKTREE_BIN:-$SC_ROOT/bin/sc-worktree.sh}"
 STATE="${SC_STATE_OVERRIDE:-$SC_HOME/state}"
 DATA="${SC_DATA_OVERRIDE:-$SC_HOME/data}"
 PROJECTS="${SC_PROJECTS_OVERRIDE:-$SC_HOME/projects}"
@@ -360,7 +362,7 @@ fi
 
 tmux new-window -d -t "$SES" -n "$W" -c "$PROJ_ABS"
 if [ "$KIND" != secondmate ]; then
-  # Pre-fire clone sync: before treehouse get carves a worktree off this clone's
+  # Pre-fire clone sync: before sc-worktree.sh carves a worktree off this clone's
   # checked-out local default branch, fast-forward that branch to origin/<default>
   # so the cook starts from the latest landed work - not from a clone whose local
   # default lags origin (the race between a remote merge and the next fleet sync).
@@ -387,29 +389,38 @@ if [ "$KIND" != secondmate ]; then
     fi
   fi
 
-  tmux send-keys -t "$T" 'treehouse get' Enter
-
-  # Wait for the treehouse subshell: the pane's cwd moves from the project to the worktree.
-  for _ in $(seq 1 60); do
-    p=$(tmux display-message -p -t "$T" '#{pane_current_path}' 2>/dev/null || true)
-    if [ -n "$p" ] && [ "$p" != "$PROJ_ABS" ]; then
-      WT="$p"
-      break
-    fi
-    sleep 1
-  done
-  if [ -z "$WT" ]; then
-    echo "error: treehouse get did not enter a worktree within 60s; inspect window $T" >&2
+  # Carve the isolated worktree with the native worktree manager (bin/sc-worktree.sh).
+  # It prints ONLY the absolute worktree path to stdout (banners to stderr), so we
+  # capture it DETERMINISTICALLY here - no pane-scraping, the bug that once
+  # misrecorded a worktree as ~/.oh-my-zsh when a shell-startup cd raced the poll.
+  # Leased under the task id so the worktree survives a souschef restart with no
+  # live process and is never auto-reclaimed until teardown returns it.
+  if ! WT=$("$SC_WORKTREE" get --lease --lease-holder "$ID" --repo "$PROJ_ABS"); then
+    echo "error: sc-worktree.sh get failed for $ID; inspect window $T" >&2
     exit 1
   fi
+  if [ -z "$WT" ]; then
+    echo "error: sc-worktree.sh get returned no worktree path for $ID; inspect window $T" >&2
+    exit 1
+  fi
+  # Drive the pane into the worktree (the agent launches in this same subshell).
+  tmux send-keys -t "$T" -l "cd $(shell_quote "$WT")"
+  tmux send-keys -t "$T" Enter
+  # Settle: wait for the pane cwd to reach WT. The path is already authoritative
+  # (from stdout above), so this only confirms the cd landed before we launch.
+  for _ in $(seq 1 30); do
+    p=$(tmux display-message -p -t "$T" '#{pane_current_path}' 2>/dev/null || true)
+    [ "$p" = "$WT" ] && break
+    sleep 0.2
+  done
 
   # Isolation guard: refuse to launch unless WT is a genuine, ISOLATED worktree -
   # a real git worktree root, distinct from the project's primary checkout
-  # (PROJ_ABS). Souschef is a treehouse-pooled repo of itself, so a treehouse-get
-  # misfire can leave the pane in (or in a subdir of, or a symlink to) the primary
-  # checkout; branching/committing there would tangle the primary onto a feature
-  # branch (see sc-tangle-lib.sh). The wait loop above only proves the pane left
-  # PROJ_ABS's exact path; this proves it landed in a true, separate worktree.
+  # (PROJ_ABS). Souschef is a self-hosted git repo (it worktrees ITSELF), so a
+  # worktree-manager misfire landing in (or in a subdir of, or a symlink to) the
+  # primary checkout would let branching/committing tangle the primary onto a
+  # feature branch (see sc-tangle-lib.sh). sc-worktree returns an authoritative
+  # path, so this is now defense-in-depth rather than the sole check.
   wt_real=
   if ! wt_real=$(cd "$WT" 2>/dev/null && pwd -P); then
     wt_real=
@@ -424,7 +435,9 @@ if [ "$KIND" != secondmate ]; then
     wt_top_real=
   fi
   if [ -z "$wt_real" ] || [ -z "$wt_top_real" ] || [ "$wt_real" != "$wt_top_real" ] || [ "$wt_real" = "$proj_real" ]; then
-    echo "error: treehouse get did not yield an isolated worktree (resolved '$WT'; worktree root '${wt_top:-none}'; primary '$PROJ_ABS'); refusing to launch to avoid tangling the primary checkout. Inspect window $T" >&2
+    echo "error: sc-worktree.sh get did not yield an isolated worktree (resolved '$WT'; worktree root '${wt_top:-none}'; primary '$PROJ_ABS'); refusing to launch to avoid tangling the primary checkout. Inspect window $T" >&2
+    # Return the just-leased worktree so an aborted fire never leaks a lease.
+    "$SC_WORKTREE" return --force "$WT" >/dev/null 2>&1 || true
     exit 1
   fi
 fi

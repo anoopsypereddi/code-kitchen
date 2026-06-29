@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Tear down a finished task: return the treehouse worktree or retire a
-# secondmate home, kill the tmux window, clear volatile state, refresh/prune
-# the project's clone for PR-based ship tasks, then print a backlog-refresh
-# reminder.
-# REFUSES if the worktree holds work that has not LANDED, because treehouse return
-# hard-resets the worktree and kills its processes. Work has landed when it is
+# Tear down a finished task: return the git worktree (via bin/sc-worktree.sh) or
+# retire a secondmate home, kill the tmux window, clear volatile state,
+# refresh/prune the project's clone for PR-based ship tasks, then print a
+# backlog-refresh reminder.
+# REFUSES if the worktree holds work that has not LANDED, because the worktree
+# return hard-resets the worktree and kills its processes. Work has landed when it is
 # reachable from any remote-tracking branch (a fork counts as a remote, so
 # upstream-contribution PRs pushed to a fork satisfy this in any mode), OR - for a
 # normal ship task whose commits are not so reachable - when its PR is merged and
@@ -25,8 +25,8 @@
 # teardown refuses while their home has in-flight crewmate meta files; --force
 # is the approved discard path that prevalidates child removal targets, discards
 # child work, kills child windows, and removes the retired home. Removing a
-# leased home releases its durable treehouse lease so the pool slot is freed,
-# never left leased forever. If the treehouse return fails, teardown leaves the
+# leased home releases its durable worktree lease so the slot is freed,
+# never left leased forever. If the worktree return fails, teardown leaves the
 # leased home and state in place instead of hiding a still-held lease.
 # Usage: sc-teardown.sh <task-id> [--force]
 #   --force skips ordinary-task dirty and landed-work checks, skips scout report
@@ -36,6 +36,8 @@ set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SC_ROOT="${SC_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+# The native worktree manager; overridable so tests can inject a fake.
+SC_WORKTREE="${SC_WORKTREE_BIN:-$SC_ROOT/bin/sc-worktree.sh}"
 SC_HOME="${SC_HOME:-${SC_ROOT_OVERRIDE:-$SC_ROOT}}"
 STATE="${SC_STATE_OVERRIDE:-$SC_HOME/state}"
 DATA="${SC_DATA_OVERRIDE:-$SC_HOME/data}"
@@ -398,12 +400,8 @@ remove_souschef_home() {
   abs_home_path=$(validate_souschef_home_for_removal "$home" "$label" "$expected_id") || return 1
   [ -n "$abs_home_path" ] || return 0
   if souschef_home_has_treehouse_slot "$abs_home_path"; then
-    command -v treehouse >/dev/null 2>&1 || {
-      echo "error: treehouse command not found; cannot return $label $abs_home_path" >&2
-      return 1
-    }
-    ( cd "$SC_ROOT" && treehouse return --force "$abs_home_path" ) || {
-      echo "error: treehouse return failed for $label $abs_home_path; lease may still be held" >&2
+    "$SC_WORKTREE" return --force "$abs_home_path" || {
+      echo "error: sc-worktree return failed for $label $abs_home_path; lease may still be held" >&2
       return 1
     }
     return 0
@@ -458,8 +456,8 @@ cleanup_souschef_home_children() {
     elif [ -n "$child_wt" ] && [ -d "$child_wt" ]; then
       validate_child_worktree_for_removal "$child_wt" "$child_proj" >/dev/null || return 1
       rm -f "$child_wt/.claude/settings.local.json" "$child_wt/.opencode/plugins/sc-turn-end.js"
-      if [ -n "$child_proj" ] && [ -d "$child_proj" ] && command -v treehouse >/dev/null 2>&1; then
-        ( cd "$child_proj" && treehouse return --force "$child_wt" ) || safe_rm_rf_child_worktree "$child_wt" "$child_proj"
+      if [ -n "$child_proj" ] && [ -d "$child_proj" ]; then
+        "$SC_WORKTREE" return --force "$child_wt" || safe_rm_rf_child_worktree "$child_wt" "$child_proj"
       else
         safe_rm_rf_child_worktree "$child_wt" "$child_proj"
       fi
@@ -572,13 +570,14 @@ if [ -d "$WT" ] && [ "$KIND" != secondmate ]; then
   fi
   # Remove our hook file so a reused pool worktree cannot fire signals for a dead task.
   rm -f "$WT/.claude/settings.local.json" "$WT/.opencode/plugins/sc-turn-end.js"
-  # Kills remaining processes in the worktree (including the agent), resets, returns
-  # to pool. treehouse resolves the pool from the working directory, so run it from
-  # the project. Guarded: under set -e an unguarded failure would abort before the
-  # window kill and state cleanup below, stranding an orphaned tmux window and meta.
-  # On failure we report and continue so volatile state is still cleared.
-  if ! ( cd "$PROJ" && treehouse return --force "$WT" ); then
-    echo "warn: treehouse return failed for $WT; the pooled worktree may still be checked out - continuing teardown of window and state" >&2
+  # Kills remaining processes in the worktree (including the agent), then removes
+  # the worktree and releases its lease (bin/sc-worktree.sh return). The dirty/
+  # unlanded refusal above has already passed, so --force's discard is intended.
+  # Guarded: under set -e an unguarded failure would abort before the window kill
+  # and state cleanup below, stranding an orphaned tmux window and meta. On failure
+  # we report and continue so volatile state is still cleared.
+  if ! "$SC_WORKTREE" return --force "$WT"; then
+    echo "warn: sc-worktree return failed for $WT; the worktree may still be checked out - continuing teardown of window and state" >&2
   fi
 fi
 
