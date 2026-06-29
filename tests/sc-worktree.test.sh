@@ -5,7 +5,7 @@
 # Coverage:
 #   - get/status/return lifecycle (deterministic path, isolated worktree)
 #   - durable lease state surviving a simulated souschef restart (no live process)
-#   - prune reclaims dead-owner UNLEASED worktrees but never leased ones
+#   - prune reclaims orphaned (externally-removed) worktrees but never leased ones
 #   - concurrent gets are lock-serialized into distinct, intact ledger rows
 #   - return terminates lingering processes inside the worktree (treehouse parity)
 #   - the path is returned on stdout, never scraped from the cwd/pane - so the
@@ -23,7 +23,7 @@ WT_BIN="$ROOT/bin/sc-worktree.sh"
 # under-the-root prefix assertions hold.
 TMPDIR=$(cd "${TMPDIR:-/tmp}" && pwd -P); export TMPDIR
 TMP_ROOT=$(sc_test_tmproot sc-worktree-tests)
-sc_git_identity
+sc_git_identity scwt scwt@example.invalid
 
 # A primary git repo on `main` with one commit. Echoes its absolute path.
 make_primary() {
@@ -84,16 +84,18 @@ test_lease_durable_across_restart() {
   pass "sc-worktree: a lease survives a simulated restart and is never auto-pruned"
 }
 
-test_prune_reclaims_dead_unleased() {
-  local primary transient
+test_prune_reclaims_orphans() {
+  local primary path st
   primary=$(make_primary "$TMP_ROOT/prune/primary")
-  # An UNLEASED get records owner_pid = the calling shell, which is already dead by
-  # the time we prune (command substitution returned), so prune should reclaim it.
-  transient=$(wt prune get --repo "$primary") || fail "bare get failed"
-  [ -d "$transient" ] || fail "bare get did not create a worktree"
+  path=$(wt prune get --lease --lease-holder gone-p3 --repo "$primary") || fail "get failed"
+  # Simulate an externally-vanished worktree (e.g. a manual rm or a wiped scratch
+  # dir): the ledger row and git admin files are now dangling. prune must drop them.
+  rm -rf "$path"
   wt prune prune --repo "$primary" >/dev/null || fail "prune errored"
-  [ ! -d "$transient" ] || fail "prune did not reclaim a dead-owner unleased worktree"
-  pass "sc-worktree: prune reclaims a dead-owner unleased worktree"
+  st=$(wt prune status --repo "$primary")
+  assert_not_contains "$st" "gone-p3" "prune did not drop the orphan ledger row"
+  git -C "$primary" worktree list | grep -F "$path" >/dev/null && fail "git still lists the orphaned worktree"
+  pass "sc-worktree: prune reclaims orphaned (externally-removed) worktrees"
 }
 
 test_concurrent_gets() {
@@ -181,7 +183,7 @@ test_base_is_latest_default() {
 
 test_lifecycle
 test_lease_durable_across_restart
-test_prune_reclaims_dead_unleased
+test_prune_reclaims_orphans
 test_concurrent_gets
 test_return_kills_processes
 test_deterministic_path_not_scraped

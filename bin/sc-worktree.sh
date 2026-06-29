@@ -153,6 +153,29 @@ ledger_row_for_path() {
 }
 
 # --- process termination ----------------------------------------------------
+# Print the pids of every process with cwd or an open file under <dir>. Uses
+# lsof when present (covers macOS), and a /proc scan when present (covers Linux
+# even without lsof, e.g. a minimal container). Either source alone is enough;
+# both run when both exist. Errors from races/permissions are swallowed.
+procs_using_dir() {
+  local dir=$1 d pid lnk fd
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -t +D "$dir" 2>/dev/null || true
+  fi
+  if [ -d /proc ]; then
+    for d in /proc/[0-9]*; do
+      [ -d "$d" ] || continue
+      pid=${d#/proc/}
+      lnk=$(readlink "$d/cwd" 2>/dev/null || true)
+      case "$lnk" in "$dir"|"$dir"/*) echo "$pid"; continue ;; esac
+      for fd in "$d"/fd/*; do
+        lnk=$(readlink "$fd" 2>/dev/null || true)
+        case "$lnk" in "$dir"|"$dir"/*) echo "$pid"; break ;; esac
+      done
+    done
+  fi
+}
+
 # Replicates treehouse return's "terminate lingering processes": every process
 # with an open file or cwd under the worktree is TERM'd, then KILL'd if it
 # survives. We never kill ourselves or our own ancestry (the callers run return
@@ -161,8 +184,8 @@ kill_procs_in() {
   local dir=$1 owner_pid=${2:-} pids="" pid self_chain
   [ -d "$dir" ] || { [ -n "$owner_pid" ] || return 0; }
   self_chain=$(ancestry_pids)
-  if command -v lsof >/dev/null 2>&1 && [ -d "$dir" ]; then
-    pids=$(lsof -t +D "$dir" 2>/dev/null | sort -u || true)
+  if [ -d "$dir" ]; then
+    pids=$(procs_using_dir "$dir" | sort -un || true)
   fi
   [ -n "$owner_pid" ] && pids=$(printf '%s\n%s\n' "$pids" "$owner_pid" | sort -un)
   [ -n "$pids" ] || return 0
@@ -177,7 +200,7 @@ kill_procs_in() {
   for pid in $pids; do
     [ -n "$pid" ] || continue
     case " $self_chain " in *" $pid "*) continue ;; esac
-    kill -0 "$pid" 2>/dev/null && kill -KILL "$pid" 2>/dev/null || true
+    if kill -0 "$pid" 2>/dev/null; then kill -KILL "$pid" 2>/dev/null || true; fi
   done
 }
 
@@ -188,7 +211,7 @@ ancestry_pids() {
   for _ in 1 2 3 4 5 6 7 8 9 10; do
     out="$out $pid"
     pid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')
-    [ -n "$pid" ] && [ "$pid" -gt 1 ] || break
+    if [ -z "$pid" ] || [ "$pid" -le 1 ]; then break; fi
   done
   printf '%s\n' "$out"
 }
@@ -352,7 +375,7 @@ cmd_status() {
       leased=$(ledger_field "$row" 4)
       holder=$(ledger_field "$row" 5)
       pid=$(ledger_field "$row" 6)
-      [ "$leased" = 1 ] && leased=yes || leased=no
+      if [ "$leased" = 1 ]; then leased=yes; else leased=no; fi
       if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then alive=yes; else alive=no; fi
       printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$id" "$leased" "${holder:--}" "${pid:--}" "$alive" "$path"
     done < "$ledger"
@@ -400,8 +423,10 @@ cmd_prune() {
       printf '%s\n' "$row" >> "$tmp"
     else
       removed=$((removed + 1))
-      [ -d "$path" ] && git -C "$primary" worktree remove --force "$path" 2>/dev/null || true
-      [ -d "$path" ] && rm -rf "$path"
+      if [ -d "$path" ]; then
+        git -C "$primary" worktree remove --force "$path" 2>/dev/null || true
+        rm -rf "$path"
+      fi
     fi
   done < "$ledger"
   mv "$tmp" "$ledger"
