@@ -67,7 +67,7 @@ else
 fi
 
 POLL=${SC_POLL:-15}                   # seconds between cycles
-HEARTBEAT=${SC_HEARTBEAT:-600}        # base seconds between heartbeat wakes
+HEARTBEAT=${SC_HEARTBEAT:-1800}       # base seconds between heartbeat wakes
 HEARTBEAT_MAX=${SC_HEARTBEAT_MAX:-7200}  # heartbeat backoff cap
 CHECK_INTERVAL=${SC_CHECK_INTERVAL:-300}  # seconds between *.check.sh sweeps
 CHECK_TIMEOUT=${SC_CHECK_TIMEOUT:-30}     # seconds allowed per *.check.sh
@@ -106,6 +106,31 @@ window_held_warm() {
     mw=$(grep '^window=' "$meta" | cut -d= -f2- || true)
     [ "$mw" = "$w" ] || continue
     grep -qx 'held=warm' "$meta" && return 0
+    return 1
+  done
+  return 1
+}
+
+# Has the window's cook already delivered and gone idle awaiting souschef? A cook
+# whose last status line is a terminal/awaiting state - done (covers PR-opened /
+# awaiting-merge and report-written, all of which are `done:` lines), blocked, or
+# needs-decision - has already woken souschef via that status signal and is now
+# legitimately parked. Re-flagging its idle pane as stale is pure noise (the big
+# offender was a ship cook sitting on an open, green PR awaiting merge). The
+# heartbeat still reviews it, and a cook resumes work by writing fresh pane output
+# (busy signature) before its next status, so genuine mid-work cooks still trip
+# stale detection.
+window_delivered_idle() {
+  local w=$1 meta mw id last
+  for meta in "$STATE"/*.meta; do
+    [ -e "$meta" ] || continue
+    mw=$(grep '^window=' "$meta" | cut -d= -f2- || true)
+    [ "$mw" = "$w" ] || continue
+    id=$(basename "$meta" .meta)
+    last=$(grep -v '^[[:space:]]*$' "$STATE/$id.status" 2>/dev/null | tail -1)
+    case "$last" in
+      done:*|blocked:*|needs-decision:*) return 0 ;;
+    esac
     return 1
   done
   return 1
@@ -259,6 +284,10 @@ EOF
     # healthy idle pane: it is kept alive for Chef follow-ups against its loaded
     # context until an explicit 86 or promote, so do not flag it stale.
     window_held_warm "$w" && continue
+    # A cook that already reported a terminal/awaiting status (done, blocked,
+    # needs-decision) is parked awaiting souschef, not wedged: it already woke
+    # souschef via that status, so its idle pane must not generate stale wakes.
+    window_delivered_idle "$w" && continue
     tail40=$(tmux capture-pane -p -t "$w" -S -40 2>/dev/null) || continue
     h=$(printf '%s' "$tail40" | hash_pane)
     key=$(printf '%s' "$w" | tr ':/.' '___')

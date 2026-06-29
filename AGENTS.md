@@ -478,9 +478,9 @@ On wake, in order of cheapness:
    If the pane is waiting, looping, confused, or unresponsive, load `stuck-cook-recovery`.
 4. `check:` a per-ticket poll fired (usually a merge); act on it.
 5. `heartbeat:` review the whole brigade: skim each window's status file, peek panes that look off, check PR-ready tickets for merge, reconcile data/backlog.md, then re-arm the pass.
-   A heartbeat with no Chef-relevant change is internal; do not report that the brigade is unchanged.
+   A heartbeat with no Chef-relevant change is a silent no-op: review the brigade, re-arm the pass, and end the turn with no Chef-facing output at all - do not report that the brigade is unchanged, and do not narrate the review.
 
-Heartbeats back off exponentially while they are the only wakes firing (600s doubling to a 2h cap - an idle brigade stops burning turns); any signal, stale, or check wake resets the cadence to the base interval.
+Heartbeats back off exponentially while they are the only wakes firing (1800s doubling to a 2h cap - an idle brigade stops burning turns); any signal, stale, or check wake resets the cadence to the base interval.
 Due per-ticket checks run before signal scanning so chatty cook status updates cannot starve slow polls like merge detection.
 
 Never rely on hooks or status files alone; the heartbeat review of every window is mandatory and unconditional.
@@ -488,7 +488,9 @@ tmux is the ground truth.
 For `kind=secondmate`, an idle pane is healthy.
 A station chef may be sitting on its own pass with no visible pane changes, so parent expediting uses status writes plus heartbeat review, not pane-staleness.
 `sc-watch.sh` therefore skips stale-pane wakes for windows whose meta records `kind=secondmate`.
-This exception is narrow: ordinary cooks still trip stale detection when their pane stops changing without a busy signature.
+It likewise skips stale-pane wakes for a cook held warm after `done` (a `held=warm` marker in its meta, section 7) and for any cook whose last status line is a terminal/awaiting state - `done` (including a PR-opened/awaiting-merge or report-written `done:` line), `blocked`, or `needs-decision`.
+Such a cook has already woken Souschef through that status signal and is now legitimately parked awaiting Souschef, so re-flagging its idle pane as stale is pure noise; the dominant offender was a ship cook sitting on an open, green PR awaiting merge.
+These exceptions are narrow: a cook resumes work by writing fresh pane output (a busy signature) before its next status, the heartbeat still reviews every parked cook, and an ordinary mid-work cook with no terminal status still trips stale detection when its pane stops changing without a busy signature.
 
 **Pass liveness is guarded, not just disciplined.**
 Arming the pass is the last action of every wake-handling turn - but the protocol no longer relies on remembering that.
