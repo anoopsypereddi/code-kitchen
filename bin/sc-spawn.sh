@@ -12,6 +12,11 @@
 #   provisioned souschef home; the default is kind=ship.
 #   Before a secondmate launch, the home is locally fast-forwarded to the primary
 #   default-branch commit when safe; skipped syncs warn and launch unchanged.
+#   Before a ship/scout launch, the project clone's checked-out default branch is
+#   fast-forwarded to origin/<default> (via sc-fleet-sync.sh) so the cook starts
+#   from the latest landed work; this fetch+ff is skipped cleanly (warn, launch
+#   unchanged) for a local-only/no-origin project, a dirty/diverged/non-default
+#   checkout, or a fetch/ff failure, and is bounded by SC_SPAWN_SYNC_TIMEOUT (20s).
 #   Ship/scout spawns refuse to launch after treehouse get unless the resolved pane
 #   path is a real git worktree root distinct from the primary project checkout.
 # Batch dispatch: pass one or more `id=repo` pairs instead of a single <id> <project>, e.g.
@@ -355,6 +360,33 @@ fi
 
 tmux new-window -d -t "$SES" -n "$W" -c "$PROJ_ABS"
 if [ "$KIND" != secondmate ]; then
+  # Pre-fire clone sync: before treehouse get carves a worktree off this clone's
+  # checked-out local default branch, fast-forward that branch to origin/<default>
+  # so the cook starts from the latest landed work - not from a clone whose local
+  # default lags origin (the race between a remote merge and the next fleet sync).
+  # Reuses sc-fleet-sync.sh, the one guarded fetch+ff+prune path: it skips cleanly
+  # and leaves the checkout untouched for a local-only/no-origin project, a dirty
+  # clone, a diverged or non-default checkout, or a fetch/fast-forward failure -
+  # never forcing, stashing, or discarding, and a skip never aborts the fire.
+  # Bounded by SC_SPAWN_SYNC_TIMEOUT (default 20s, mirroring bootstrap's brigade
+  # sync budget); a timeout warns and launches from the unchanged checkout. Silent
+  # on success, mirroring the secondmate pre-launch sync above.
+  spawn_sync_timeout=${SC_SPAWN_SYNC_TIMEOUT:-20}
+  proj_sync_rc=0
+  if command -v timeout >/dev/null 2>&1; then
+    proj_sync_out=$(timeout "$spawn_sync_timeout" "$SC_ROOT/bin/sc-fleet-sync.sh" "$PROJ_ABS" 2>&1) || proj_sync_rc=$?
+  else
+    proj_sync_out=$("$SC_ROOT/bin/sc-fleet-sync.sh" "$PROJ_ABS" 2>&1) || proj_sync_rc=$?
+  fi
+  if [ "$proj_sync_rc" -ne 0 ]; then
+    echo "warning: pre-fire clone sync for $(basename "$PROJ_ABS") did not complete (timed out or errored after ${spawn_sync_timeout}s); launching from the unchanged checkout" >&2
+  else
+    proj_sync_skip=$(printf '%s\n' "$proj_sync_out" | grep ': skipped:' | head -1 || true)
+    if [ -n "$proj_sync_skip" ]; then
+      echo "warning: pre-fire clone sync $proj_sync_skip; launching from the unchanged checkout" >&2
+    fi
+  fi
+
   tmux send-keys -t "$T" 'treehouse get' Enter
 
   # Wait for the treehouse subshell: the pane's cwd moves from the project to the worktree.
