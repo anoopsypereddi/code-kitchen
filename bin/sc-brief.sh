@@ -107,6 +107,7 @@ Handle routine work yourself.
 Escalate only true captain-relevant outcomes by appending one line:
    \`echo "{state}: {one short line}" >> $STATUS_FILE\`
 States: working, needs-decision, blocked, done, failed.
+For a needs-decision, use the format \`needs-decision: <one line at stake> | options: <A> / <B>[ | recommend: <X>]\` so the decision drops straight into the main souschef's open-decisions ledger.
 Use this only for material phase changes, a captain decision, a real blocker, a failure, or work ready for review.
 This is also how you return the answer to a marked from-souschef request above.
 Routine internal supervision, heartbeats, retries, and crewmate churn stay inside your own home and must not touch that status file.
@@ -152,8 +153,9 @@ The report is the only thing that survives, so anything worth keeping must be in
    would act on and the needs-decision/blocked/done/failed states. No step-by-step
    FYI progress lines; souschef reads your pane for that.
 5. If you hit the same obstacle twice, append \`blocked: {why}\` and stop; souschef will help.
-6. If a decision belongs to a human (product choices, destructive actions),
-   append \`needs-decision: {summary of options}\` and stop. Souschef will reply with the decision.
+6. **Never idle silently on a choice that is the Chef's to make.** The moment you hit a product decision, a destructive or irreversible action, or any fork you cannot resolve from this brief, STOP and append exactly:
+     \`needs-decision: <one line stating the decision at stake> | options: <A> / <B>[ / <C>][ | recommend: <X>]\`
+   The one-liner must stand alone - a supervisor reading only that line must understand the call - and the options must be concrete and mutually exclusive. Then stop and wait. Do NOT guess, do NOT pick silently, do NOT keep working around it. Souschef replies with the decision and you resume from there.
 
 # Definition of done
 Write your findings to \`$DATA/$ID/report.md\`.
@@ -217,8 +219,9 @@ $RULE1
    needs-decision/blocked/done/failed states. No step-by-step FYI progress lines;
    souschef reads your pane for that.
 5. If you hit the same obstacle twice, append \`blocked: {why}\` and stop; souschef will help.
-6. If a decision belongs to a human (product choices, destructive actions, ask-user findings),
-   append \`needs-decision: {summary of options}\` and stop. Souschef will reply with the decision.
+6. **Never idle silently on a choice that is the Chef's to make.** The moment you hit a product decision, a destructive or irreversible action, an ask-user finding, or any fork you cannot resolve from this brief, STOP and append exactly:
+     \`needs-decision: <one line stating the decision at stake> | options: <A> / <B>[ / <C>][ | recommend: <X>]\`
+   The one-liner must stand alone - a supervisor reading only that line must understand the call - and the options must be concrete and mutually exclusive. Then stop and wait. Do NOT guess, do NOT pick silently, do NOT keep working around it. Souschef replies with the decision and you resume from there.
 
 # Project memory
 If \`AGENTS.md\` or \`CLAUDE.md\` already exists, or if this task produced durable project-intrinsic knowledge, run \`$SC_ROOT/bin/sc-ensure-agents-md.sh .\` in the worktree.
