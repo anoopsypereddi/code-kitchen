@@ -2,7 +2,8 @@
 # Promote a scout task to a ship task in place: the crewmate keeps its window,
 # worktree, and loaded context; only the contract changes. Flips kind= to ship in
 # state/<task-id>.meta so sc-teardown.sh applies the full ship-task teardown protection
-# again. After promoting, send the crewmate its ship instructions via sc-send.sh
+# again, and clears any held=warm marker so the now-active cook is supervised by the
+# pass normally (it is no longer an idle prep cook). After promoting, send the crewmate its ship instructions via sc-send.sh
 # (inventory scratch state, reset to a clean default-branch base, carry over only
 # intended fix changes, create branch fm/<task-id>, implement, then report done
 # according to the project's delivery mode).
@@ -20,7 +21,7 @@ META="$STATE/$ID.meta"
 grep -qx 'kind=scout' "$META" || { echo "error: task $ID is not a scout task (kind=scout not in meta)" >&2; exit 1; }
 
 TMP="$META.tmp"
-grep -v '^kind=' "$META" > "$TMP"
+grep -vE '^(kind|held)=' "$META" > "$TMP"
 echo "kind=ship" >> "$TMP"
 mv "$TMP" "$META"
 
