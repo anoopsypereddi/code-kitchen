@@ -360,7 +360,11 @@ if tmux list-windows -t "$SES" -F '#{window_name}' | grep -qx "$W"; then
   exit 1
 fi
 
-tmux new-window -d -t "$SES" -n "$W" -c "$PROJ_ABS"
+# Target the session with a trailing colon: a bare session name ("$SES") is
+# misparsed by tmux as a window target and fails with "create window failed:
+# index N in use" when that index is occupied; "$SES:" unambiguously means this
+# session, auto-picking the next free window index.
+tmux new-window -d -t "$SES:" -n "$W" -c "$PROJ_ABS"
 if [ "$KIND" != secondmate ]; then
   # Pre-fire clone sync: before sc-worktree.sh carves a worktree off this clone's
   # checked-out local default branch, fast-forward that branch to origin/<default>
