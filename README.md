@@ -6,16 +6,6 @@
       alt="Platform"
       src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux-blue?style=flat-square"
   /></a>
-  <a href="https://x.com/kunchenguid"
-    ><img
-      alt="X"
-      src="https://img.shields.io/badge/X-@kunchenguid-black?style=flat-square"
-  /></a>
-  <a href="https://discord.gg/Wsy2NpnZDu"
-    ><img
-      alt="Discord"
-      src="https://img.shields.io/discord/1439901831038763092?style=flat-square&label=discord"
-  /></a>
 </p>
 
 <h3 align="center">Talk to the Souschef. Ship with the brigade.</h3>
@@ -88,20 +78,35 @@ Each project picks how a finished change reaches `main`:
 
 ## Getting started
 
-You need a verified agent harness (claude, codex, opencode, or pi), git with GitHub auth, and tmux for the station windows.
-The Souschef detects and offers to install everything else on first run - so getting started is just launching your harness in this directory and talking to it.
+### Prerequisites (read these first)
 
-### One-command setup on a fresh machine
+code-kitchen runs *inside* an AI agent harness - there is no code-kitchen app to install. You point an agent at this repo and talk to it. So before anything else:
 
-On a brand-new macOS or Linux box, run the turnkey installer once:
+- **An agent harness, installed and authenticated** - one of claude, codex, opencode, or pi. This is non-negotiable: the Souschef *is* an agent running in that harness, and every Cook it fires defaults to the **same** harness. So the harness you launch the Souschef in is the one that does all the actual work - make sure it is logged in (API key set / authenticated) before you start.
+- **`gh`, the GitHub CLI, authenticated** (`gh auth login`) - every PR, issue, and CI check flows through it. `setup.sh` treats this as a hard requirement and will not finish without it.
+- **`tmux`** - every Cook runs in its own tmux window you can watch or jump into.
+- **`git`** - each Cook works in its own isolated git worktree.
 
-```
-./setup.sh
-```
+`setup.sh` installs `gh`, `tmux`, `git`, and the other base tools for you; the agent harness you install and log into yourself.
 
-It installs everything installable - the base tools (git, curl, tmux, node/npm, gh) via your OS package manager (brew on macOS; apt/dnf/pacman on Linux). That is the whole dependency set; everything else the kitchen needs ships in this repo (worktrees are managed by the built-in `bin/sc-worktree.sh`, so there is no separate worktree tool to install).
-It is idempotent (safe to re-run; already-installed tools are skipped) and fails fast with a clear message if something can't be installed.
-When it finishes it prints the few steps that can't be scripted - `gh auth login`, authenticating your agent harness, and optional first-run config.
+### The model in one minute
+
+You are the **Chef**. You talk to one always-on manager, the **Souschef**, in plain language. The Souschef never edits your projects itself - it delegates each piece of real work to a **Cook**, an autonomous agent running in its own isolated git worktree, and brings finished work back to you as a PR to review, a local merge to approve, or a written report. That is the whole idea; everything below is detail.
+
+### Setup (the happy path)
+
+1. Clone this repo and `cd` into it.
+2. Run the one-command installer (idempotent; safe to re-run):
+   ```
+   ./setup.sh
+   ```
+   It installs the base tools (git, curl, tmux, node/npm, gh) via your OS package manager (brew on macOS; apt/dnf/pacman on Linux) and then verifies your `gh` access, failing fast if it is missing or unauthenticated.
+3. Authenticate GitHub if you haven't already:
+   ```
+   gh auth login
+   ```
+4. Authenticate your agent harness (claude / codex / opencode / pi) on this machine.
+5. Launch that harness from inside this directory and just talk to it.
 
 See [`AGENTS.md`](AGENTS.md) for the full operating manual and the bootstrap it runs at startup.
 
@@ -139,6 +144,10 @@ Outside tmux, stations land in a detached `souschef` session you can attach to.
 ## Contributing
 
 Contributions are welcome - see [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow, repo conventions, and how to run the tests.
+
+## Acknowledgments
+
+code-kitchen is heavily inspired by [firstmate](https://github.com/kunchenguid/firstmate) by Kun Chen. It began as a fork of that project and has since been made our own - an independent project that diverges from upstream.
 
 ## License
 

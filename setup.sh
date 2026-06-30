@@ -42,27 +42,55 @@ fi
 say "Bootstrap detection (remaining gaps, if any)"
 "$BOOT" || true
 
-# 3. The manual steps that cannot be scripted.
+# 3. gh access is a HARD requirement, not just a passive bootstrap fact.
+#    The kitchen runs every GitHub operation (PRs, issues, CI) through gh, so
+#    setup must not finish "clean" while gh is missing or unauthenticated.
+#    This reuses bin/sc-bootstrap.sh's NEEDS_GH_AUTH contract (the real
+#    `gh auth status` probe) but treats a failure as fatal.
+say "GitHub access (gh, authenticated)"
+if ! have gh; then
+  cat >&2 <<'ERR'
+gh (the GitHub CLI) is not installed, but the kitchen needs it for all GitHub
+work (PRs, issues, CI). Install it (re-run ./setup.sh, or your package manager),
+then authenticate:
+    gh auth login
+ERR
+  exit 1
+fi
+if ! gh auth status >/dev/null 2>&1; then
+  cat >&2 <<'ERR'
+gh is installed but not authenticated. The kitchen needs an authenticated gh for
+all GitHub work (PRs, issues, CI). Fix it with:
+    gh auth login
+then re-run ./setup.sh.
+ERR
+  exit 1
+fi
+gh_user=$(gh api user --jq .login 2>/dev/null || true)
+if [ -n "$gh_user" ]; then
+  echo "gh: authenticated as $gh_user ✓"
+else
+  echo "gh: authenticated ✓"
+fi
+
+# 4. The manual steps that cannot be scripted.
 cat <<'MANUAL'
 
 ============================================================
 Automated setup done. Finish these manual steps yourself:
 ============================================================
 
-  1. GitHub auth (interactive):
-       gh auth login
-
-  2. Authenticate your agent harness on this machine
+  1. Authenticate your agent harness on this machine
      (log in / set the API key for whichever you use):
        claude   |   codex   |   opencode
 
-  3. First-run config (optional, quick):
+  2. First-run config (optional, quick):
        - Set the cook harness:  write a single adapter name to
          config/crew-harness  (omit to mirror your own harness).
        - Optionally create  data/captain.md  with your preferences.
        - data/projects.md is rebuilt from projects/ on first run if absent.
 
-  4. The first cook spawn clears the harness trust dialog once per
+  3. The first cook spawn clears the harness trust dialog once per
      directory; after that, dispatch runs unattended.
 
 Then start the souschef and it will run bootstrap clean.
