@@ -43,8 +43,6 @@ STATE="${SC_STATE_OVERRIDE:-$SC_HOME/state}"
 DATA="${SC_DATA_OVERRIDE:-$SC_HOME/data}"
 SECONDMATE_REG="$DATA/secondmates.md"
 SUB_HOME_MARKER=".sc-secondmate-home"
-# shellcheck source=bin/sc-tasks-axi-lib.sh
-. "$SCRIPT_DIR/sc-tasks-axi-lib.sh"
 "$SC_ROOT/bin/sc-guard.sh" || true
 ID=$1
 FORCE=${2:-}
@@ -60,7 +58,7 @@ PR_URL=$(grep '^pr=' "$META" | tail -1 | cut -d= -f2- || true)
 KIND=$(grep '^kind=' "$META" | cut -d= -f2- || true)
 [ -n "$KIND" ] || KIND=ship
 MODE=$(grep '^mode=' "$META" | cut -d= -f2- || true)
-[ -n "$MODE" ] || MODE=no-mistakes
+[ -n "$MODE" ] || MODE=direct-PR
 
 default_branch() {
   local ref branch
@@ -83,14 +81,13 @@ meta_value() {
   grep "^$key=" "$meta" | cut -d= -f2- || true
 }
 
-# Resolve the PR number for a worktree branch via gh-axi. Echoes the number on a
+# Resolve the PR number for a worktree branch via gh. Echoes the number on a
 # single match and returns 0; returns non-zero on no match or any lookup failure,
 # so the caller treats it as "no PR found" (fail-safe).
 pr_number_from_branch() {
-  local branch=$1 out n
+  local branch=$1 n
   [ -n "$branch" ] && [ "$branch" != HEAD ] || return 1
-  out=$( cd "$WT" && gh-axi pr list --state all --head "$branch" --limit 1 2>/dev/null ) || return 1
-  n=$(printf '%s\n' "$out" | sed -n 's/^[[:space:]]*\([0-9][0-9]*\),.*/\1/p' | head -1)
+  n=$( cd "$WT" && gh pr list --state all --head "$branch" --limit 1 --json number -q '.[0].number' 2>/dev/null ) || return 1
   [ -n "$n" ] || return 1
   printf '%s' "$n"
 }
@@ -108,9 +105,8 @@ pr_is_merged() {
     target=$(pr_number_from_branch "$branch") || return 1
   fi
   [ -n "$target" ] || return 1
-  # Intentionally bare gh, not gh-axi: machine read of state+headRefOid, which
-  # gh-axi cannot supply (no --json/-q; pr list --fields/api expose no head SHA).
-  # The head-SHA match is what makes the merged-and-deleted-branch teardown safe.
+  # Machine read of state+headRefOid; the head-SHA match is what makes the
+  # merged-and-deleted-branch teardown safe.
   view=$(cd "$WT" && gh pr view "$target" --json state,headRefOid -q '.state + "\t" + .headRefOid' 2>/dev/null) || return 1
   state=${view%%$'\t'*}
   head=${view#*$'\t'}
@@ -160,33 +156,7 @@ work_is_landed() {
 }
 
 backlog_refresh_reminder() {
-  local pr done_cmd report_path
-  if sc_tasks_axi_compatible; then
-    case "$KIND" in
-      scout)
-        report_path="data/$ID/report.md"
-        done_cmd="tasks-axi done $ID --report $report_path"
-        ;;
-      secondmate)
-        done_cmd="tasks-axi done $ID --note \"retired\""
-        ;;
-      *)
-        if [ "$MODE" = local-only ]; then
-          done_cmd="tasks-axi done $ID --note \"local main\""
-        else
-          pr=$PR_URL
-          if [ -n "$pr" ]; then
-            done_cmd="tasks-axi done $ID --pr $pr"
-          else
-            done_cmd="tasks-axi done $ID --pr PR_URL"
-          fi
-        fi
-        ;;
-    esac
-    printf '%s\n' "Backlog: $ID just finished. Run $done_cmd, then run tasks-axi ready for dependency-cleared candidates, check date gates, and dispatch only work whose blockers are gone and date is due."
-  else
-    printf '%s\n' "Backlog: $ID just finished. Update data/backlog.md - move $ID to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due."
-  fi
+  printf '%s\n' "Backlog: $ID just finished. Update data/backlog.md - move $ID to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due."
 }
 
 registry_home_for_line() {
@@ -233,7 +203,7 @@ EOF
   return 1
 }
 
-souschef_home_has_treehouse_slot() {
+souschef_home_has_worktree_slot() {
   local home=$1
   worktree_registered_for_project "$SC_ROOT" "$home"
 }
@@ -399,7 +369,7 @@ remove_souschef_home() {
   [ -e "$home" ] || return 0
   abs_home_path=$(validate_souschef_home_for_removal "$home" "$label" "$expected_id") || return 1
   [ -n "$abs_home_path" ] || return 0
-  if souschef_home_has_treehouse_slot "$abs_home_path"; then
+  if souschef_home_has_worktree_slot "$abs_home_path"; then
     "$SC_WORKTREE" return --force "$abs_home_path" || {
       echo "error: sc-worktree return failed for $label $abs_home_path; lease may still be held" >&2
       return 1

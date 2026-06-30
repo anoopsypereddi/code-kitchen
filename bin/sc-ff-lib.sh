@@ -14,7 +14,7 @@
 # primary's commit in the shared object store; the local-HEAD sync is therefore a
 # purely local fast-forward that never touches the network. A tracked-files
 # fast-forward never touches the gitignored operational dirs (data/, state/,
-# config/, projects/, .no-mistakes/), so a secondmate's backlog, projects, and
+# config/, projects/), so a secondmate's backlog, projects, and
 # in-flight work are never disturbed. Homes are leased at a detached HEAD on the
 # default branch, so the fast-forward advances HEAD only and never moves the
 # shared default branch or any other worktree's checkout.

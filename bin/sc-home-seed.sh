@@ -10,10 +10,9 @@
 #       "sc-worktree.sh return". Projects are cloned
 #       from the active home into the secondmate home's projects/ directory.
 #       That project list is non-exclusive provisioning data. The charter brief
-#       is copied to data/charter.md, newly cloned no-mistakes projects are
-#       initialized, a .sc-secondmate-home marker is written, and
+#       is copied to data/charter.md, a .sc-secondmate-home marker is written, and
 #       data/secondmates.md is updated.
-#       Seeding is transactional: on validation, clone, init, or registry failure,
+#       Seeding is transactional: on validation, clone, or registry failure,
 #       generated briefs, new homes, new project clones, and registry edits are
 #       rolled back. Leased homes are returned only when the rollback target is
 #       safe; a failed return warns because the lease may still be held.
@@ -461,7 +460,7 @@ seeded_origin_url() {
   normalize_origin_url "$dst" "$url"
 }
 
-acquire_treehouse_home() {
+acquire_worktree_home() {
   local id=$1 home
   # Durably lease a souschef worktree (bin/sc-worktree.sh). The lease persists with
   # no live process and is skipped by prune, so the home survives restarts until
@@ -478,7 +477,7 @@ acquire_treehouse_home() {
 ensure_home() {
   local id=$1 requested=$2 home
   if [ "$requested" = "-" ]; then
-    home=$(acquire_treehouse_home "$id")
+    home=$(acquire_worktree_home "$id")
     verify_souschef_home "$home"
     return
   fi
@@ -540,7 +539,7 @@ clone_project() {
 $(SC_HOME="$SC_HOME" SC_DATA_OVERRIDE="$DATA" "$SC_ROOT/bin/sc-project-mode.sh" "$project")
 EOF
   if [ "$mode" = local-only ]; then
-    echo "error: project $project is local-only; secondmate routes support only no-mistakes and direct-PR projects" >&2
+    echo "error: project $project is local-only; secondmate routes support only direct-PR projects" >&2
     return 1
   fi
   if [ -e "$dst" ]; then
@@ -567,7 +566,7 @@ validate_seed_project() {
 $(SC_HOME="$SC_HOME" SC_DATA_OVERRIDE="$DATA" "$SC_ROOT/bin/sc-project-mode.sh" "$project")
 EOF
   if [ "$mode" = local-only ]; then
-    echo "error: project $project is local-only; secondmate routes support only no-mistakes and direct-PR projects" >&2
+    echo "error: project $project is local-only; secondmate routes support only direct-PR projects" >&2
     return 1
   fi
   url=$(git -C "$src" remote get-url origin 2>/dev/null || true)
@@ -634,7 +633,7 @@ seed_rollback_target() {
   printf '%s\n' "$abs_target"
 }
 
-seed_return_treehouse_home() {
+seed_return_worktree_home() {
   local home=$1 abs_home
   abs_home=$(seed_rollback_target "$home" "leased home") || return 0
   "$SC_WORKTREE" return --force "$abs_home" >/dev/null || {
@@ -671,13 +670,6 @@ seed_remove_created_project() {
   rm -rf -- "$abs_project" 2>/dev/null || true
 }
 
-seed_project_was_created() {
-  local project_path=$1
-  [ -n "${SEED_CREATED_PROJECTS_FILE:-}" ] || return 1
-  [ -f "$SEED_CREATED_PROJECTS_FILE" ] || return 1
-  grep -Fx -- "$project_path" "$SEED_CREATED_PROJECTS_FILE" >/dev/null 2>&1
-}
-
 seed_rollback() {
   local project_path
   [ "${SEED_ROLLBACK_ACTIVE:-0}" = 1 ] || return 0
@@ -692,7 +684,7 @@ seed_rollback() {
 
   if [ -n "${SEED_HOME:-}" ] && [ "$SEED_HOME" != "/" ]; then
     if [ "$SEED_HOME_ACQUIRED" = 1 ]; then
-      seed_return_treehouse_home "$SEED_HOME"
+      seed_return_worktree_home "$SEED_HOME"
     elif [ "$SEED_HOME_CREATED" = 1 ]; then
       seed_remove_created_home "$SEED_HOME"
     else
@@ -724,14 +716,6 @@ registry_line_for_project() {
   printf '%s\n' "$line"
 }
 
-project_mode_in_home() {
-  local home=$1 project=$2 mode
-  read -r mode _ <<EOF
-$(SC_ROOT_OVERRIDE='' SC_STATE_OVERRIDE='' SC_DATA_OVERRIDE='' SC_PROJECTS_OVERRIDE='' SC_CONFIG_OVERRIDE='' SC_HOME="$home" "$SC_ROOT/bin/sc-project-mode.sh" "$project")
-EOF
-  printf '%s\n' "$mode"
-}
-
 sync_project_registry() {
   local home=$1 sub_reg tmp project line today names
   shift
@@ -758,28 +742,6 @@ sync_project_registry() {
     printf '%s\n' "$line" >> "$tmp"
   done
   mv "$tmp" "$sub_reg"
-}
-
-initialize_no_mistakes_project() {
-  local home=$1 project=$2 created=$3 mode dst
-  mode=$(project_mode_in_home "$home" "$project")
-  [ "$mode" = no-mistakes ] || return 0
-  dst=$(validate_project_destination "$home" "$project") || return 1
-  if git -C "$dst" remote get-url no-mistakes >/dev/null 2>&1; then
-    return 0
-  fi
-  if [ "$created" != 1 ]; then
-    echo "error: seeded project $project at $dst is not initialized for no-mistakes; refusing to mutate preexisting clone" >&2
-    return 1
-  fi
-  command -v no-mistakes >/dev/null 2>&1 || {
-    echo "error: no-mistakes command not found; cannot initialize $project in $home" >&2
-    return 1
-  }
-  ( cd "$dst" && no-mistakes init && no-mistakes doctor ) || {
-    echo "error: failed to initialize no-mistakes for $project at $dst" >&2
-    return 1
-  }
 }
 
 write_registry() {
@@ -834,7 +796,7 @@ seed_home() {
 
   if [ "$requested_home" = "-" ]; then
     SEED_HOME_ACQUIRED=1
-    home=$(acquire_treehouse_home "$id")
+    home=$(acquire_worktree_home "$id")
     SEED_HOME="$home"
     home=$(verify_souschef_home "$home")
   else
@@ -895,14 +857,6 @@ seed_home() {
     clone_project "$project" "$home"
   done
   sync_project_registry "$home" "$@"
-  for project in "$@"; do
-    project_dst=$(validate_project_destination "$home" "$project") || return 1
-    if seed_project_was_created "$project_dst"; then
-      initialize_no_mistakes_project "$home" "$project" 1
-    else
-      initialize_no_mistakes_project "$home" "$project" 0
-    fi
-  done
 
   cp "$SEED_PARENT_BRIEF" "$home/data/charter.md"
 

@@ -31,13 +31,13 @@ When verifying a new adapter, record its env marker and command name in `bin/sc-
 For stuck recovery, the target window's harness is recorded as `harness=` in `state/<id>.meta`.
 Use that value for interrupt, exit, resume, and skill-invocation facts.
 
-## no-mistakes skill invocation
+## Skill invocation
 
-Send the validation skill using the target harness's skill invocation form.
+Send a skill using the target harness's skill invocation form.
 Natural language is acceptable if uncertain.
 
-- claude: `/<skill>`, for example `/no-mistakes`.
-- codex: `$<skill>`, for example `$no-mistakes`; `/<skill>` is claude-only and codex rejects it as "Unrecognized command".
+- claude: `/<skill>`, for example `/code-review`.
+- codex: `$<skill>`, for example `$code-review`; `/<skill>` is claude-only and codex rejects it as "Unrecognized command".
 - opencode: no separate verified skill invocation beyond normal slash-command behavior; use natural language if the exact skill command is uncertain.
 - pi: no separate verified skill invocation beyond normal command behavior; use natural language if the exact skill command is uncertain.
 
@@ -48,7 +48,7 @@ Natural language is acceptable if uncertain.
 | Busy-pane signature | `esc to interrupt` |
 | Exit command | `/exit` |
 | Interrupt | single Escape |
-| Skill invocation | `/<skill>` (e.g. `/no-mistakes`) |
+| Skill invocation | `/<skill>` (e.g. `/code-review`) |
 
 First launch in a fresh worktree, or first ever on a machine, may show a trust or bypass-permissions confirmation.
 After every fire, peek the pane within about 20 seconds.
@@ -69,7 +69,7 @@ That styled capture is internal to the boolean detector only.
 | Busy-pane signature | `esc to interrupt` (shown as `• Working (Xs • esc to interrupt)`) |
 | Exit command | `/quit` (slash popup needs about 1 second between text and Enter; `sc-send` handles it) |
 | Interrupt | single Escape |
-| Skill invocation | `$<skill>` (e.g. `$no-mistakes`); `/<skill>` is claude-only and codex rejects it as "Unrecognized command" |
+| Skill invocation | `$<skill>` (e.g. `$code-review`); `/<skill>` is claude-only and codex rejects it as "Unrecognized command" |
 
 Directory trust dialog on first run per repo root: "Do you trust the contents of this directory?"
 Accept with Enter.

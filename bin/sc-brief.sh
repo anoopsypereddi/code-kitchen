@@ -20,8 +20,7 @@
 # For ship tasks, the definition of done is shaped by the project's delivery mode
 # (data/projects.md via sc-project-mode.sh; see AGENTS.md project management
 # and task lifecycle):
-#   no-mistakes  implement -> /no-mistakes pipeline -> PR -> captain merge (default)
-#   direct-PR    implement -> push + open PR via gh-axi (no pipeline) -> captain merge
+#   direct-PR    implement -> validate locally -> push + open PR via gh -> captain merge (default)
 #   local-only   implement on branch, stop and report "ready in branch" (no push/PR);
 #                souschef reviews, captain approves, souschef merges to local main
 # Ship briefs begin with a worktree-isolation assertion before the branch step.
@@ -145,7 +144,7 @@ The report is the only thing that survives, so anything worth keeping must be in
 # Rules
 1. Never push to any remote and never open a PR.
 2. Stay inside this worktree; the only files you may write outside it are the report and the status file below.
-3. Use gh-axi for GitHub operations and chrome-devtools-axi for browser operations.
+3. Use \`gh\` for GitHub operations.
 4. Report status by appending one line:
    \`echo "{state}: {one short line}" >> $STATUS_FILE\`
    States: working, needs-decision, blocked, done, failed.
@@ -177,18 +176,13 @@ EOF
 # mode-specific Definition of done is appended afterward via its own top-level
 # here-doc (NOT a here-doc nested in $(), which mis-parses under bash 3.2).
 case "$MODE" in
-  direct-PR)
-    SETUP2=""
-    RULE1='1. Never push to the default branch (push only your `fm/'"$ID"'` branch). Never merge a PR.'
-    ;;
   local-only)
     SETUP2=""
     RULE1="1. Never push to any remote and never open a PR. Work only on your \`fm/$ID\` branch; souschef handles the merge into local \`main\`."
     ;;
-  *)  # no-mistakes (default)
-    SETUP2="
-2. Run \`no-mistakes doctor\`; if it reports the repo is not initialized here, run \`no-mistakes init\`."
-    RULE1='1. Never push to the default branch. Never merge a PR.'
+  *)  # direct-PR (default)
+    SETUP2=""
+    RULE1='1. Never push to the default branch (push only your `fm/'"$ID"'` branch). Never merge a PR.'
     ;;
 esac
 
@@ -210,7 +204,7 @@ If the top-level path is the primary checkout or not the worktree you were launc
 # Rules
 $RULE1
 2. Stay inside this worktree; modify nothing outside it.
-3. Use gh-axi for GitHub operations and chrome-devtools-axi for browser operations.
+3. Use \`gh\` for GitHub operations.
 4. Report status by appending one line:
    \`echo "{state}: {one short line}" >> $STATUS_FILE\`
    States: working, needs-decision, blocked, done, failed.
@@ -233,55 +227,25 @@ EOF
 # Append the mode-specific Definition of done. Each is a top-level here-doc
 # redirected to the brief - never wrapped in $(...) - so bash 3.2 parses it.
 case "$MODE" in
-  direct-PR)
-    cat >> "$BRIEF" <<EOF
-# Definition of done
-This project ships **direct-PR**: you raise the PR yourself, without the no-mistakes pipeline.
-The task is complete only when committed on your branch.
-When it is implemented and committed, push your branch and open a PR with \`gh-axi\`, then append \`done: PR {url}\` to the status file and stop.
-Do NOT run /no-mistakes. The captain reviews and merges the PR; souschef relays it.
-EOF
-    ;;
   local-only)
     cat >> "$BRIEF" <<EOF
 # Definition of done
-This project ships **local-only**: no remote, no PR, no pipeline.
+This project ships **local-only**: no remote, no PR.
 The task is complete only when committed on your branch \`fm/$ID\`. Do NOT push, do NOT open a PR, do NOT merge.
+Validate locally first: run the project's own lint, format, type, and test commands and get them green before you call the work done.
 Keep your branch a clean fast-forward onto the current default branch - if \`main\` has advanced, rebase onto it so the eventual merge stays a fast-forward.
-When it is implemented and committed, append \`done: ready in branch fm/$ID\` to the status file and stop.
+When it is implemented, validated, and committed, append \`done: ready in branch fm/$ID\` to the status file and stop.
 Souschef then reviews your branch diff, the captain approves, and souschef merges it into local \`main\`.
 EOF
     ;;
-  *)  # no-mistakes (default)
+  *)  # direct-PR (default)
     cat >> "$BRIEF" <<EOF
 # Definition of done
+This project ships **direct-PR**: you validate locally, then raise the PR yourself.
 The task is complete only when committed on your branch.
-When you believe it is complete, append \`done: {summary}\` to the status file and stop.
-Souschef will then instruct you to run /no-mistakes to validate and ship a PR.
-
-During validation the pipeline owns every fix; you only drive the gates.
-Once a run is active, every fix - both auto-fix findings and the fix for a real bug the review finds in your own code - is applied by the pipeline on your branch, in its own worktree.
-Never hand-edit, \`git commit\`, \`git reset\`/\`git checkout\`, abort, or re-run while a run is active: doing so duplicates the pipeline's work and forces a full re-validation.
-You advance the work only by responding to gates:
-- Process every return; never idle-wait.
-  \`no-mistakes axi run\` / \`axi respond\` return either at a gate (a \`gate:\` object) or at a terminal or CI-ready outcome (no \`gate:\`).
-  A run legitimately runs long - test, CI, and each fix round take many minutes - so a quiet call is working, not stalled.
-  Backgrounding the call is fine; idle-waiting for the run to advance on its own is not, because it never advances past a gate by itself.
-  Read every return: on a \`gate:\`, respond, and loop until you reach an outcome.
-- Auto-fix findings: advance the gate with \`no-mistakes axi respond --action fix --findings <ids>\`; the pipeline applies the fix on your branch and re-reviews.
-  You never apply it yourself.
-- Review findings always gate.
-  Review auto-fix is disabled, so every actionable review finding parks for your response instead of being self-fixed - drive it like any other gate.
-- ask-user findings: escalate to souschef (rule 6) and stop.
-  When the decision comes back, feed it to the gate with \`no-mistakes axi respond\` (the \`--action\`/answer the decision implies) and let the pipeline apply it.
-  Even when it is a real bug in your own code, do NOT implement the decided fix yourself and do NOT abort to go fix it - the pipeline applies it from your \`respond\`.
-- Avoid \`--yes\`: it silently auto-resolves every finding, including \`ask-user\`, with zero escalation, so a decision the captain should make gets resolved without them.
-  Drive gates manually and escalate \`ask-user\` findings.
-- Gate wedge self-heal: if \`no-mistakes axi run\` reports **"no previous run for branch"** (the gate hook did not fire because your branch lives in an isolated worktree and a same-ref re-push is a no-op), recover yourself instead of reporting blocked:
-  run \`$SC_ROOT/bin/sc-gate-recover.sh\` from your worktree (it deletes the gate ref and re-pushes so the hook fires), then retry \`no-mistakes axi run\`.
-  The helper is idempotent and bounded; if it exits non-zero, the gate genuinely could not be recovered - only then append \`blocked: {message}\` and stop.
-
-After /no-mistakes reports CI green, append \`done: PR {url} checks green\` and stop. You are finished.
+Validate locally first: run the project's own lint, format, type, and test commands and get them all green before you open the PR. Fix anything they flag.
+When it is implemented, validated, and committed, push your branch and open a PR with \`gh\`, then append \`done: PR {url}\` to the status file and stop.
+The captain reviews and merges the PR; souschef relays it.
 EOF
     ;;
 esac

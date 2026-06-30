@@ -42,8 +42,8 @@ Provision the persistent home and registry entry after the charter is filled:
 bin/sc-home-seed.sh <id> <home|-> <project>...
 ```
 
-`-` durably leases a fresh Souschef worktree via `treehouse get --lease` under the station chef id.
-The lease survives with no live process and is never recycled by later `treehouse get` or `prune`.
+`-` durably leases a fresh Souschef worktree via `bin/sc-worktree.sh get --lease` under the station chef id.
+The lease survives with no live process and is never recycled by later `bin/sc-worktree.sh get` or `prune`.
 The slot stays reserved across restarts until the lease is released.
 Release happens only on explicit retirement or seed rollback, never on routine restart or recovery.
 
@@ -56,11 +56,10 @@ Direct seed without a preexisting brief requires `SC_SECONDMATE_CHARTER`.
 Run `bin/sc-home-seed.sh validate` when checking registry integrity; it refuses duplicate ids, duplicate homes, and nested or overlapping homes.
 
 Seeding is transactional.
-If validation, cloning, no-mistakes initialization, or registry update fails, generated briefs, new homes, new project clones, and registry edits are rolled back.
+If validation, cloning, or registry update fails, generated briefs, new homes, new project clones, and registry edits are rolled back.
 
-Station chef project lists may include `no-mistakes` and `direct-PR` projects only.
+Station chef project lists may include `direct-PR` projects only.
 `local-only` projects stay with the main Souschef.
-For `no-mistakes` projects, seeding initializes only projects newly cloned into a station chef home and refuses to mutate a preexisting clone that is not already initialized.
 
 ## Backlog handoff
 
@@ -107,9 +106,9 @@ Run `bin/sc-teardown.sh <id>` for `kind=secondmate` only when the Chef or main S
 The safety check is the station chef's own home.
 86 refuses while its `state/*.meta` contains in-flight work.
 When safe, 86 kills the direct tmux window, removes the `data/secondmates.md` route, clears the main home metadata, and removes the retired station chef home.
-Removing a leased home releases its durable treehouse lease via `treehouse return`, so the pool slot is freed for reuse rather than left leased forever.
+Removing a leased home releases its durable worktree lease via `bin/sc-worktree.sh return`, so the pool slot is freed for reuse rather than left leased forever.
 A plain-clone home with no pool slot is simply removed.
-If `treehouse return` fails for a leased home, 86 stops with state intact rather than raw-removing the directory and hiding a held lease.
+If `bin/sc-worktree.sh return` fails for a leased home, 86 stops with state intact rather than raw-removing the directory and hiding a held lease.
 
 With `--force`, 86 is the explicit discard path.
 It kills child windows, discards child work and state inside the station chef home, removes the route, releases the lease, and removes the retired station chef home.

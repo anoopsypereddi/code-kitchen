@@ -1,8 +1,6 @@
 projects/
 state/
 data/
-.no-mistakes/
-.lavish/
 .DS_Store
 .env
 config/crew-harness

@@ -1,43 +1,36 @@
 # Contributing
 
 Thanks for wanting to contribute.
-One rule up front:
 
-**Human-authored pull requests targeting `main` must be raised through [`no-mistakes`](https://github.com/kunchenguid/no-mistakes).**
-We require this to reduce the maintainer's burden of reviewing and merging contributions.
-
-`no-mistakes` puts a local git proxy in front of your real remote.
-Pushing through it runs an AI-driven review/test/lint pipeline in an isolated worktree, forwards the push upstream only after every check passes, and opens a clean PR automatically.
-
-A GitHub Actions check (`Require no-mistakes`) runs on PRs targeting `main` and fails if the body is missing the deterministic signature that no-mistakes writes.
-Dependency bots are exempt so their automation keeps working, but regular contributor PRs without the signature will not be reviewed or merged.
+Validate your change locally before you open a PR: run the toolbelt checks below (shellcheck, `bash -n`, and the behavior tests) and get them all green.
+CI runs the same checks on every PR targeting `main`, so a locally-green branch is the fastest path to review.
 
 ## Workflow
 
-1. Fork the repo, then clone the parent repo or set your local `origin` back to the parent (`git@github.com:kunchenguid/souschef.git`).
+1. Fork the repo, then clone your fork (or set your local `origin` to your fork).
 2. Create a branch and make your changes.
-3. Initialize the gate with your fork as the push target: `no-mistakes init --fork-url git@github.com:<you>/souschef.git` (fork routing requires **no-mistakes v1.30.1+**; without a fork, plain `no-mistakes init` still works for maintainers with push access).
+3. Validate locally: run the toolbelt checks under [Development](#development) and get shellcheck, `bash -n`, and the behavior tests all green.
 4. Commit your changes.
-5. Push through the gate instead of pushing to `origin`:
+5. Push the branch to your fork:
 
    ```sh
-   git push no-mistakes
+   git push -u origin <your-branch>
    ```
 
-6. Run `no-mistakes` to attach to the pipeline, watch findings, authorize auto-fixes, and review ask-user findings as needed.
-   While a run is active, let the pipeline apply authorized fixes instead of editing or committing them by hand.
-7. Once the pipeline passes, it pushes the branch to your fork and opens the PR against the parent repo for you.
+6. Open a PR against the parent repo with `gh`:
 
-See the [no-mistakes quick start](https://kunchenguid.github.io/no-mistakes/start-here/quick-start/) for the full first-run walkthrough.
+   ```sh
+   gh pr create --fill
+   ```
+
+A maintainer reviews and merges. There is no separate validation gate to push through - the only requirement is that the toolbelt checks pass, which CI verifies.
 
 ## Repo conventions
 
 - This repo is a template for running a Souschef orchestrator agent.
   `AGENTS.md` is the agent's main job description and names when to load bundled skills; `CLAUDE.md` is a symlink to it, and `.claude/skills` is a symlink to `.agents/skills`.
-- Only shared material is tracked: `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, `.tasks.toml`, `.github/workflows/`, `bin/`, and `.agents/skills/`.
-  Everything personal to one Chef's brigade (`data/`, `state/`, `config/`, `projects/`, `.no-mistakes/`) is gitignored; never commit it.
-  The root `.tasks.toml` is tracked `tasks-axi` config for `data/backlog.md`; compatible `tasks-axi` uses it for routine backlog mutations.
-  It does not make `data/` tracked.
+- Only shared material is tracked: `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, `.github/workflows/`, `bin/`, and `.agents/skills/`.
+  Everything personal to one Chef's brigade (`data/`, `state/`, `config/`, `projects/`) is gitignored; never commit it.
 - Helper scripts in `bin/` are plain bash.
   Each starts with a usage header comment; keep it accurate when you change behavior.
   Test scripts and helpers in `tests/` are plain bash too.
@@ -49,12 +42,9 @@ See the [no-mistakes quick start](https://kunchenguid.github.io/no-mistakes/star
 
 ## Development
 
-Tracked changes to Souschef itself - `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, `.tasks.toml`, `.github/workflows/`, `bin/`, and agent skill files - go through the `no-mistakes` pipeline on a feature branch and require an explicit merge approval.
+Tracked changes to Souschef itself - `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, `.github/workflows/`, `bin/`, and agent skill files - go on a feature branch, are validated locally, and reach `main` through a PR the Chef merges.
 When expediting live cooks, keep Souschef's own long validation or build commands in the background so pass wakes can still be handled.
-Unlike Souschef, a cook owns its own validation gate loop: it processes every `no-mistakes axi run` or `no-mistakes axi respond` return, responds to gates, and never waits for a parked gate to self-resolve.
-The pipeline owns every validation fix, including auto-fix findings and fixes for real bugs found in the cook's own code; the cook authorizes or answers with `no-mistakes axi respond` instead of editing, committing, aborting, or re-running while the run is active.
-Do not use `--yes` for cook validation because it silently resolves `ask-user` findings without escalation.
-Local `.no-mistakes/` state and test evidence stay out of this repo; `.no-mistakes.yaml` keeps evidence in a temp directory instead.
+A cook validates its own change locally - running the project's lint, format, type, and test commands and getting them green - before it opens its PR.
 
 Check and test the toolbelt before pushing:
 
@@ -77,7 +67,7 @@ tests/sc-update.test.sh                   # fast-forward-only self-update, rerea
 tests/sc-secondmate-sync.test.sh          # local-HEAD station chef sync, no-fetch, bootstrap nudge gating, and spawn hook tests
 tests/sc-secondmate-lifecycle-e2e.test.sh # persistent station chef routing, seeding, backlog handoff, fire, recovery, 86, and SC_HOME flow tests
 tests/sc-secondmate-safety.test.sh        # station chef home safety, idle charter, handoff validation, and 86 boundary tests
-tests/sc-teardown.test.sh                 # sc-teardown.sh landed-work safety and reminder checks: fork-remote allow, squash/content landings, dirty and unlanded refusals, PR-head metadata, tasks-axi reminder, --force override
+tests/sc-teardown.test.sh                 # sc-teardown.sh landed-work safety and reminder checks: fork-remote allow, squash/content landings, dirty and unlanded refusals, PR-head metadata, backlog reminder, --force override
 [ "$(readlink CLAUDE.md)" = "AGENTS.md" ]
 [ "$(readlink .claude/skills)" = "../.agents/skills" ]
 SC_HEARTBEAT=2 SC_POLL=1 bin/sc-watch-arm.sh  # pass re-arm smoke test (prints arm status, then "heartbeat")

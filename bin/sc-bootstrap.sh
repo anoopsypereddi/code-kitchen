@@ -5,7 +5,7 @@
 #          Silent = all good.
 #          Lines: "MISSING: <tool> (install: <command>)", "NEEDS_GH_AUTH",
 #                 "CREW_HARNESS_OVERRIDE: <name>", "FLEET_SYNC: <repo>: skipped: <reason>",
-#                 "TASKS_AXI: available", "TANGLE: <remediation>",
+#                 "TANGLE: <remediation>",
 #                 "SECONDMATE_SYNC: secondmate <id>: skipped: <reason>",
 #                 "NUDGE_SECONDMATES: <window-targets...>".
 #          A NUDGE_SECONDMATES line lists the RUNNING secondmate windows whose
@@ -20,9 +20,6 @@
 #          landed in the primary instead of its own worktree; restore it per the line.
 #          Worktrees are managed by code-kitchen's own bin/sc-worktree.sh (built on
 #          git worktree), so there is no third-party worktree tool to probe.
-#          tasks-axi is an OPTIONAL backlog-management capability reported only
-#          when tasks-axi --version is 0.1.1 or newer. It is never a MISSING
-#          line and never prompts an install.
 #          Fleet sync fetches, fast-forwards, and prunes gone local branches;
 #          it is bounded by SC_FLEET_SYNC_BOOTSTRAP_TIMEOUT, default 20s.
 #          Set SC_FLEET_PRUNE=0 to skip branch pruning during that refresh.
@@ -36,8 +33,6 @@ SC_HOME="${SC_HOME:-${SC_ROOT_OVERRIDE:-$SC_ROOT}}"
 PROJECTS="${SC_PROJECTS_OVERRIDE:-$SC_HOME/projects}"
 CONFIG="${SC_CONFIG_OVERRIDE:-$SC_HOME/config}"
 STATE="${SC_STATE_OVERRIDE:-$SC_HOME/state}"
-# shellcheck source=bin/sc-tasks-axi-lib.sh
-. "$SCRIPT_DIR/sc-tasks-axi-lib.sh"
 # shellcheck source=bin/sc-tangle-lib.sh
 . "$SCRIPT_DIR/sc-tangle-lib.sh"
 # shellcheck source=bin/sc-ff-lib.sh
@@ -155,13 +150,11 @@ install_cmd() {
       else
         echo "install $1 manually (no supported package manager detected)"
       fi ;;
-    no-mistakes) echo "curl -fsSL https://raw.githubusercontent.com/kunchenguid/no-mistakes/main/docs/install.sh | sh" ;;
-    gh-axi|chrome-devtools-axi|lavish-axi) echo "npm install -g $1 && $1 setup hooks" ;;
     *) return 1 ;;
   esac
 }
 
-TOOLS="tmux node npm gh git curl no-mistakes gh-axi chrome-devtools-axi lavish-axi"
+TOOLS="tmux node npm gh git curl"
 
 if [ "${1:-}" = "install" ]; then
   shift
@@ -193,7 +186,6 @@ fi
 crew=
 [ -f "$CONFIG/crew-harness" ] && crew=$(tr -d '[:space:]' < "$CONFIG/crew-harness" || true)
 [ -n "$crew" ] && [ "$crew" != "default" ] && echo "CREW_HARNESS_OVERRIDE: $crew"
-sc_tasks_axi_compatible && echo "TASKS_AXI: available"
 secondmate_sync
 fleet_sync
 exit 0

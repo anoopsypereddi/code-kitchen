@@ -7,12 +7,12 @@ user-invocable: true
 # updatesouschef
 
 Self-update Souschef in place.
-Souschef is its own repo, behind the same no-mistakes gate as any project, so new tracked material (AGENTS.md, bin/, skills) reaches `main` and then sits there until each running Souschef pulls it.
+Souschef is its own repo, so new tracked material (AGENTS.md, bin/, skills) reaches `main` through the normal PR flow and then sits there until each running Souschef pulls it.
 This skill performs that pull for the running main Souschef and every station chef, without disturbing any in-flight work.
 
 The update is **fast-forward only** - the same sanctioned self-write as the brigade sync Souschef already runs.
 It never forces, never creates a merge commit, never stashes, and advances a target only on a clean fast-forward; anything dirty, diverged, offline, or on the wrong branch is skipped and reported.
-A tracked-files fast-forward leaves the gitignored operational dirs (data/, state/, config/, projects/, .no-mistakes/) untouched, so a station chef's in-flight work is never disrupted.
+A tracked-files fast-forward leaves the gitignored operational dirs (data/, state/, config/, projects/) untouched, so a station chef's in-flight work is never disrupted.
 This touches only the Souschef repo and its own worktrees, never anything under `projects/`.
 
 ## What it does
@@ -21,7 +21,7 @@ This touches only the Souschef repo and its own worktrees, never anything under 
    ```sh
    bin/sc-update.sh
    ```
-   It fast-forwards this Souschef repo's default branch from origin, then fast-forwards every registered station chef home (each a treehouse worktree of this same repo, leased at a detached HEAD on the default branch) the same way.
+   It fast-forwards this Souschef repo's default branch from origin, then fast-forwards every registered station chef home (each a worktree of this same repo, leased at a detached HEAD on the default branch) the same way.
    It prints one status line per target (`updated <old>..<new>` / `already current` / `skipped: <reason>`), followed by two action lines that tell you exactly what to do next:
    - `reread-souschef: yes|no`
    - `nudge-secondmates: <window-targets...>|none`

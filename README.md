@@ -69,10 +69,10 @@ code-kitchen doesn't reinvent the tools - it conducts them:
 
 - **tmux** - every Cook works in its own visible window you can watch or jump into.
 - **git** - each station is an isolated git worktree (carved and torn down by code-kitchen's own `bin/sc-worktree.sh`), so parallel work on one repo never steps on itself.
-- **gh** - GitHub operations (PRs, issues, CI) run through the `gh-axi` helper.
-- **no-mistakes** - the validation gate a change passes through before it can ship: automated review, tests, lint, docs, and CI.
+- **gh** - GitHub operations (PRs, issues, CI) run through the official `gh` CLI.
 - **your agent harness** - claude, codex, opencode, or pi; the Souschef spawns Cooks on the same harness you run.
-- **the `*-axi` helpers** - ergonomic wrappers (`gh-axi`, `chrome-devtools-axi`, `lavish-axi`, and friends) the brigade uses for GitHub, browsers, and rich review surfaces.
+
+Everything it conducts is a tool you already own: tmux, git, `gh`, and your harness. There are no third-party toolchain dependencies to install or trust.
 
 ## Two kinds of ticket
 
@@ -83,8 +83,7 @@ code-kitchen doesn't reinvent the tools - it conducts them:
 
 Each project picks how a finished change reaches `main`:
 
-- **no-mistakes** - the full validation gate, then a PR for you to merge. Highest assurance, the default.
-- **direct-PR** - push and open a PR for review, skipping the gate.
+- **direct-PR** - the Cook validates locally (lint, format, type-check, tests all green), then pushes and opens a PR for you to merge. The default.
 - **local-only** - a local branch with no remote; the Souschef shows you the diff and merges locally once you approve.
 
 ## Getting started
@@ -100,7 +99,7 @@ On a brand-new macOS or Linux box, run the turnkey installer once:
 ./setup.sh
 ```
 
-It installs everything installable - base tools (git, curl, tmux, node/npm, gh) via your OS package manager (brew on macOS; apt/dnf/pacman on Linux), the npm global tools, and the no-mistakes installer. (Worktrees are managed by the built-in `bin/sc-worktree.sh`, so there is no separate worktree tool to install.)
+It installs everything installable - the base tools (git, curl, tmux, node/npm, gh) via your OS package manager (brew on macOS; apt/dnf/pacman on Linux). That is the whole dependency set; everything else the kitchen needs ships in this repo (worktrees are managed by the built-in `bin/sc-worktree.sh`, so there is no separate worktree tool to install).
 It is idempotent (safe to re-run; already-installed tools are skipped) and fails fast with a clear message if something can't be installed.
 When it finishes it prints the few steps that can't be scripted - `gh auth login`, authenticating your agent harness, and optional first-run config.
 

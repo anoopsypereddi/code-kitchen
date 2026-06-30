@@ -6,11 +6,11 @@ The files and environment variables you set to operate Souschef.
 
 The shared orchestrator behavior lives in [`AGENTS.md`](../AGENTS.md) - edit it like any prompt when the brigade is empty, or dispatch shared-repo edits to a cook while tickets are in flight.
 
-## Backlog backend (.tasks.toml / tasks-axi)
+## Backlog (data/backlog.md)
 
-The tracked `.tasks.toml` pins the optional `tasks-axi` markdown backend to `data/backlog.md`, with `done_keep = 10` and an archive at `data/done-archive.md`.
-When compatible `tasks-axi` is on `PATH`, Souschef uses its verbs for routine backlog mutations and keeps station chef transfers behind `sc-backlog-handoff.sh` validation; without it, backlog bookkeeping remains manual.
-Compatible means the shared bootstrap probe accepts `tasks-axi --version` as 0.1.1 or newer.
+The backlog is the hand-edited markdown file `data/backlog.md`, with `## Open decisions`, `## In flight`, `## Queued`, and `## Done` sections.
+Keep `## Done` to the 10 most recent entries.
+Station chef transfers go through `sc-backlog-handoff.sh`, which validates the destination home before moving items.
 
 ## Chef preferences (data/captain.md)
 
@@ -24,8 +24,7 @@ The main Souschef routes by reading those scopes with judgment; the project list
 Use `sc-home-seed.sh <id> - <project>...` to lease a fresh Souschef worktree for the station chef home.
 The lease is held under the station chef id until explicit retirement or seed rollback returns it, so normal restarts do not free or recycle the home.
 86 of a leased home fails closed if `sc-worktree.sh return` cannot release the lease; plain-clone homes that are not a managed worktree are removed directly.
-Station chef routes cover `no-mistakes` and `direct-PR` projects; `local-only` projects remain main-Souschef work.
-For `no-mistakes` projects, seeding initializes only projects newly cloned into a station chef home and refuses to mutate a preexisting clone that is not already initialized.
+Station chef routes cover `direct-PR` projects; `local-only` projects remain main-Souschef work.
 After creating a station chef, move existing main-backlog items that you have judged in-scope with `sc-backlog-handoff.sh <secondmate-id> <item-key>...`; it is idempotent and refuses in-flight items or non-station-chef homes.
 Set `SC_SECONDMATE_CHARTER` to seed from inline charter text when no filled charter brief exists; set `SC_SECONDMATE_SCOPE` when the routing scope should differ from the charter text.
 
@@ -45,8 +44,7 @@ Launch mechanics, including the verified command templates, live in [`bin/sc-spa
 
 ## Toolchain
 
-On first launch the sous-chef detects what its required toolchain is missing or too old (tmux, node, gh, git, curl, no-mistakes, gh-axi, chrome-devtools-axi, lavish-axi), lists it with the exact install commands, and installs only after you say go. (Worktrees are managed by the built-in `bin/sc-worktree.sh` on plain `git worktree`, so there is no third-party worktree tool to detect.)
-If compatible `tasks-axi` is already on `PATH`, bootstrap records it as an optional capability fact and Souschef uses its verbs for routine backlog mutations; when it is absent or incompatible, Souschef keeps hand-editing `data/backlog.md` exactly as before.
+On first launch the sous-chef detects what its required toolchain is missing or too old (tmux, node, gh, git, curl), lists it with the exact install commands, and installs only after you say go. (Worktrees are managed by the built-in `bin/sc-worktree.sh` on plain `git worktree`, so there is no third-party worktree tool to detect.)
 Bootstrap also reports a `TANGLE:` line when `SC_ROOT` is on a named non-default branch; follow the printed checkout remediation rather than treating it as an installable tool problem.
 Bootstrap also runs the guarded local station chef sync for recorded live station chef homes.
 It emits `SECONDMATE_SYNC:` only when a home was skipped for an actionable reason, and `NUDGE_SECONDMATES:` only when a running home advanced and its instruction surface changed.
@@ -91,8 +89,6 @@ SC_INJECT_CONFIRM_RETRIES=3        # daemon Enter-retry attempts after typing a 
 SC_INJECT_CONFIRM_SLEEP=0.5        # seconds between daemon submit checks
 SC_HEARTBEAT_SCAN_SECS=300         # cadence of the catch-all status scan for missed Chef verbs
 SC_HOUSEKEEPING_TICK=15            # seconds between batch-flush, stale-recheck, and scan passes
-# gate recovery (bin/sc-gate-recover.sh)
-SC_GATE_RECOVER_TRIES=2            # bounded re-push cycles before gate recovery reports failure
 SC_CRASH_THRESHOLD=10              # pass crashes allowed inside SC_CRASH_WINDOW before daemon backoff
 SC_CRASH_WINDOW=60                 # seconds in the crash-loop detection window
 SC_CRASH_BACKOFF=60                # seconds to wait after crossing the crash threshold
@@ -107,5 +103,4 @@ SC_HARNESS=claude                  # harness CLI baked into and launched in the 
 SC_SECRETS_ENV=~/.config/code-kitchen/secrets.env   # host-side --env-file (GH_TOKEN, GIT_AUTHOR_*, API keys)
 SC_VOL_HOME=ck_home                # named volume for the kitchen home
 SC_VOL_WORKTREES=ck_worktrees      # named volume for the git worktree pool (~/.sc-worktrees)
-SC_VOL_NOMISTAKES=ck_nomistakes    # named volume for the no-mistakes gate state
 ```
