@@ -20,7 +20,7 @@ so no agent in the kitchen can read it. The kitchen reaches GitHub only through 
 
 ## What is and isn't mounted
 
-Storage is three **named Docker volumes** — not host bind mounts. A named volume
+Storage is two **named Docker volumes** — not host bind mounts. A named volume
 lives in the container runtime's storage, so there is no host filesystem path to
 accidentally widen and nothing on your host tree to leak.
 
@@ -28,7 +28,6 @@ accidentally widen and nothing on your host tree to leak.
 | -------------- | ----------------------- | -------------------------------------- |
 | `ck_home`      | `/home/chef/kitchen`    | the kitchen home (`projects/`, `data/`, `state/`, `config/`, `bin/`, `AGENTS.md`) |
 | `ck_worktrees` | `/home/chef/.sc-worktrees` | the git worktree pool (managed by `bin/sc-worktree.sh`) |
-| `ck_nomistakes`| `/home/chef/.no-mistakes` | the no-mistakes gate state (daemon, sqlite, bare repos) |
 
 Plus a **read-only secrets drop via `--env-file`** (see below).
 
@@ -61,9 +60,9 @@ bin/sc-container.sh down     # stop & remove the container; volumes persist
 bin/sc-container.sh nuke     # remove the container AND its volumes (explicit discard)
 ```
 
-- `up` starts the container detached. Its entrypoint starts the no-mistakes
-  daemon (when a no-mistakes project is present), configures git for HTTPS+token,
-  runs `bin/sc-bootstrap.sh` to confirm a clean detection, and then idles.
+- `up` starts the container detached. Its entrypoint configures git for
+  HTTPS+token, runs `bin/sc-bootstrap.sh` to confirm a clean detection, and then
+  idles.
 - `shell` attaches you to the Souschef inside a persistent tmux session running
   your harness. You interact with the kitchen *through the container*; PRs land
   on GitHub as usual.
@@ -98,7 +97,7 @@ tokens → Generate new token**:
    repos (e.g. `you/voop`, `you/code-kitchen`). Nothing else.
 2. **Permissions:**
    - **Contents: Read and write** (push branches),
-   - **Pull requests: Read and write** (open/manage PRs via `gh-axi`),
+   - **Pull requests: Read and write** (open/manage PRs via `gh`),
    - **Metadata: Read** (mandatory, auto-selected).
    - Optionally **Actions: Read** (CI status), if you want the brigade to read
      check results.
@@ -126,8 +125,8 @@ mkdir -p ~/.config/code-kitchen
 chmod 600 ~/.config/code-kitchen/secrets.env
 ```
 
-`bin/sc-container.sh up` injects these with `--env-file`. `gh` and `gh-axi`
-honor `GH_TOKEN` with no `gh auth login` and no config file written; the git
+`bin/sc-container.sh up` injects these with `--env-file`. `gh`
+honors `GH_TOKEN` with no `gh auth login` and no config file written; the git
 credential helper reads `GH_TOKEN` for HTTPS pushes (no SSH key ever enters the
 container); Claude Code uses `ANTHROPIC_API_KEY` headlessly (use a key
 provisioned for the kitchen so you can rotate it independently). For a non-claude
@@ -178,6 +177,6 @@ verify end-to-end yourself:
 1. `bin/sc-container.sh build && bin/sc-container.sh up && bin/sc-container.sh shell`
 2. Inside, confirm `bin/sc-bootstrap.sh` runs with no `MISSING` and no
    `NEEDS_GH_AUTH`.
-3. Fire one real Cook on a `no-mistakes` project; confirm a worktree is created
-   in the in-container pool, a branch pushes, a PR opens, CI goes green, and 86
-   tears the worktree down.
+3. Fire one real Cook on a `direct-PR` project; confirm a worktree is created
+   in the in-container pool, the cook validates locally, a branch pushes, a PR
+   opens, and 86 tears the worktree down.

@@ -33,18 +33,18 @@ ENV DEBIAN_FRONTEND=noninteractive
 #    Per-project toolchains (report §1.7): voop needs Go + a postgres client, so
 #    they are baked here for a working single-image Phase 1. This is the
 #    "lean base vs. layered image" choice called out in the plan: we accept a
-#    slightly heavier base now (golang + postgresql-client + chromium) over
+#    slightly heavier base now (golang + postgresql-client) over
 #    maintaining a separate "kitchen-with-go-node" layer, because Phase 1's goal
 #    is to prove one image runs the kitchen end-to-end. If the project mix grows
 #    past Go/Node, split per-project toolchains into a layered image built FROM
 #    this one rather than bloating the base further.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       git curl ca-certificates tmux gnupg sudo \
-      golang chromium postgresql-client \
+      golang postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
-# 2. Node 20.x via NodeSource. Distro `nodejs` is too old for the harness and
-#    the *-axi tools (report §1.1; host runs v20.20.2), so we pin via NodeSource.
+# 2. Node 20.x via NodeSource. Distro `nodejs` is too old for the harness
+#    (report §1.1; host runs v20.20.2), so we pin via NodeSource.
 RUN curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
@@ -73,26 +73,14 @@ RUN useradd -m -u "${KUID}" -s /bin/bash "${KUSER}" \
 USER ${KUSER}
 WORKDIR /home/${KUSER}
 
-# ~/.local/bin holds no-mistakes (org installer); ~/.npm-global/bin holds the npm
-# globals + harness. Both must be on PATH (report §1.3). Worktrees are managed by
-# code-kitchen's own bin/sc-worktree.sh (git worktree) - no third-party tool.
+# ~/.npm-global/bin holds the npm globals + harness, and must be on PATH
+# (report §1.3). Worktrees are managed by code-kitchen's own bin/sc-worktree.sh
+# (git worktree) - no third-party tool.
 ENV NPM_CONFIG_PREFIX="/home/${KUSER}/.npm-global"
 ENV PATH="/home/${KUSER}/.local/bin:/home/${KUSER}/.npm-global/bin:${PATH}"
 RUN mkdir -p "/home/${KUSER}/.npm-global" "/home/${KUSER}/.local/bin"
 
-# 5. npm global *-axi tools (setup.sh:42) + each tool's `setup hooks`
-#    (setup.sh:50-54). tasks-axi is optional/best-effort (setup.sh:62-68).
-RUN npm install -g gh-axi chrome-devtools-axi lavish-axi \
-    && (npm install -g tasks-axi || echo "tasks-axi not installable (optional; brigade falls back to hand-edited backlog)") \
-    && for p in gh-axi chrome-devtools-axi lavish-axi; do "$p" setup hooks; done
-
-# Point chrome-devtools-axi at the distro Chromium (report §1.6: the axi tool
-# installs but cannot drive a browser without a binary). Browser automation is
-# opportunistic, not on the critical path.
-ENV CHROME_BIN=/usr/bin/chromium
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
-
-# 6. The agent harness CLI (report §1.4). Default `claude` via its npm package;
+# 5. The agent harness CLI (report §1.4). Default `claude` via its npm package;
 #    swap with --build-arg HARNESS=codex|opencode|pi (those installs are added
 #    here as they are verified per the harness-adapters skill).
 RUN if [ "$HARNESS" = "claude" ]; then \
@@ -101,19 +89,15 @@ RUN if [ "$HARNESS" = "claude" ]; then \
       echo "WARNING: HARNESS=$HARNESS has no install rule yet; install it in this layer once the adapter is verified." >&2; \
     fi
 
-# 7. Org installer (setup.sh): no-mistakes, into ~/.local/bin. Worktrees need no
-#    third-party install - bin/sc-worktree.sh ships with the repo and rides git.
-RUN curl -fsSL https://raw.githubusercontent.com/kunchenguid/no-mistakes/main/docs/install.sh | sh
-
-# 8. Entrypoint: start the no-mistakes daemon when needed, configure git for
-#    HTTPS+token, cd into the mounted kitchen home, run bootstrap, exec the
-#    harness under tmux. The kitchen home itself is a runtime mount, not baked in.
+# 6. Entrypoint: configure git for HTTPS+token, cd into the mounted kitchen home,
+#    run bootstrap, exec the harness under tmux. The kitchen home itself is a
+#    runtime mount, not baked in.
 COPY --chown=${KUSER}:${KUSER} docker/entrypoint.sh /home/${KUSER}/entrypoint.sh
 RUN chmod +x /home/${KUSER}/entrypoint.sh
 
-# Where the kitchen home volume mounts. The git worktree pool and no-mistakes
-# store live at ~/.sc-worktrees and ~/.no-mistakes on their own named volumes;
-# sc-container.sh sets SC_WORKTREE_ROOT and builds the pool FRESH inside (report §2.4).
+# Where the kitchen home volume mounts. The git worktree pool lives at
+# ~/.sc-worktrees on its own named volume; sc-container.sh sets SC_WORKTREE_ROOT
+# and builds the pool FRESH inside (report §2.4).
 ENV SC_KITCHEN_HOME=/home/${KUSER}/kitchen
 ENV SC_WORKTREE_ROOT=/home/${KUSER}/.sc-worktrees
 ENV HARNESS=${HARNESS}

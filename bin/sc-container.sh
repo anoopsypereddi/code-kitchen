@@ -9,12 +9,11 @@
 # This is OPT-IN. If you never run it, the kitchen runs natively exactly as
 # today (setup.sh + bin/ are unchanged). See docs/containerization.md.
 #
-# Storage is three NAMED volumes (no host bind mounts, so there is no host path
-# to widen and nothing on the host tree to leak): the kitchen home, the
-# git worktree pool (~/.sc-worktrees, managed by bin/sc-worktree.sh), and the
-# no-mistakes store (~/.no-mistakes). The worktree pool is built FRESH inside the
-# container - never seeded from the host pool, whose absolute gitdir links would
-# dangle. Secrets arrive only via --env-file.
+# Storage is two NAMED volumes (no host bind mounts, so there is no host path
+# to widen and nothing on the host tree to leak): the kitchen home and the
+# git worktree pool (~/.sc-worktrees, managed by bin/sc-worktree.sh). The worktree
+# pool is built FRESH inside the container - never seeded from the host pool, whose
+# absolute gitdir links would dangle. Secrets arrive only via --env-file.
 #
 # Usage:
 #   sc-container.sh build   # build the image
@@ -36,11 +35,9 @@ SECRETS_ENV="${SC_SECRETS_ENV:-$HOME/.config/code-kitchen/secrets.env}"
 # Named volumes (not host paths). The mount points inside the container are the
 # tools' fixed default paths so absolute links stay internally consistent.
 VOL_HOME="${SC_VOL_HOME:-ck_home}"
-VOL_WORKTREES="${SC_VOL_WORKTREES:-${SC_VOL_TREEHOUSE:-ck_worktrees}}"
-VOL_NOMISTAKES="${SC_VOL_NOMISTAKES:-ck_nomistakes}"
+VOL_WORKTREES="${SC_VOL_WORKTREES:-ck_worktrees}"
 MOUNT_HOME=/home/chef/kitchen
 MOUNT_WORKTREES=/home/chef/.sc-worktrees
-MOUNT_NOMISTAKES=/home/chef/.no-mistakes
 
 die() { echo "error: $*" >&2; exit 1; }
 
@@ -64,11 +61,10 @@ case "$cmd" in
       die "container '$NAME' already exists; use 'shell' to attach, or 'down' first"
     fi
     # `sleep infinity` keeps the container alive; the entrypoint has already
-    # started the no-mistakes daemon, configured git, and run bootstrap by then.
+    # configured git and run bootstrap by then.
     "$RUNTIME" run -d --name "$NAME" \
       -v "$VOL_HOME:$MOUNT_HOME" \
       -v "$VOL_WORKTREES:$MOUNT_WORKTREES" \
-      -v "$VOL_NOMISTAKES:$MOUNT_NOMISTAKES" \
       -e "SC_WORKTREE_ROOT=$MOUNT_WORKTREES" \
       --env-file "$SECRETS_ENV" \
       "$IMAGE" sleep infinity
@@ -84,13 +80,13 @@ case "$cmd" in
   down)
     "$RUNTIME" stop "$NAME" >/dev/null 2>&1 || true
     "$RUNTIME" rm "$NAME" >/dev/null 2>&1 || true
-    echo "down: container '$NAME' removed. Named volumes ($VOL_HOME, $VOL_WORKTREES, $VOL_NOMISTAKES) persist; 'up' resumes the kitchen."
+    echo "down: container '$NAME' removed. Named volumes ($VOL_HOME, $VOL_WORKTREES) persist; 'up' resumes the kitchen."
     ;;
 
   nuke)
     "$RUNTIME" rm -f "$NAME" >/dev/null 2>&1 || true
-    "$RUNTIME" volume rm "$VOL_HOME" "$VOL_WORKTREES" "$VOL_NOMISTAKES" >/dev/null 2>&1 || true
-    echo "nuke: container '$NAME' and volumes ($VOL_HOME, $VOL_WORKTREES, $VOL_NOMISTAKES) removed."
+    "$RUNTIME" volume rm "$VOL_HOME" "$VOL_WORKTREES" >/dev/null 2>&1 || true
+    echo "nuke: container '$NAME' and volumes ($VOL_HOME, $VOL_WORKTREES) removed."
     ;;
 
   ""|-h|--help|help)

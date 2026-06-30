@@ -39,12 +39,12 @@ Service briefs also tell the cook to verify `pwd -P` and `git rev-parse --show-t
 
 ## Two ticket shapes
 
-Service tickets change projects and deliver by project mode (`no-mistakes`, `direct-PR`, or `local-only`); prep tickets investigate, plan, reproduce bugs, or audit, then leave tasting notes at `data/<id>/report.md` and never push.
+Service tickets change projects and deliver by project mode (`direct-PR` or `local-only`); prep tickets investigate, plan, reproduce bugs, or audit, then leave tasting notes at `data/<id>/report.md` and never push.
 
 ## Optional station chefs
 
 `data/secondmates.md` records persistent domain expediters with natural-language scopes, project clone lists, and home paths.
-`sc-home-seed.sh` provisions the isolated home, clones the listed PR-based projects into it, initializes newly cloned `no-mistakes` projects, copies the charter to `data/charter.md`, and `sc-spawn.sh --secondmate` launches it through the same tmux and status-file path as any direct report.
+`sc-home-seed.sh` provisions the isolated home, clones the listed PR-based projects into it, copies the charter to `data/charter.md`, and `sc-spawn.sh --secondmate` launches it through the same tmux and status-file path as any direct report.
 When seeded with `-`, the home is a durable `sc-worktree.sh` lease under the station chef id, so it survives with no live process and is never recycled by pruning until it is returned.
 Retirement or seed rollback returns the leased home; normal restart/recovery keeps it leased.
 If returning the lease fails during 86, Souschef leaves the route and home intact instead of hiding a still-held lease.
@@ -59,7 +59,7 @@ Idle station chef panes are healthy; 86 is explicit and refuses while the statio
 
 Station chef homes stay on the same Souschef version as the primary checkout.
 On main Souschef bootstrap, `sc-bootstrap.sh` fast-forwards each live station chef home recorded in `state/*.meta` to the primary default-branch commit with no origin fetch.
-A tracked-files fast-forward leaves the home's gitignored `data/`, `state/`, `config/`, `projects/`, and `.no-mistakes/` directories untouched.
+A tracked-files fast-forward leaves the home's gitignored `data/`, `state/`, `config/`, and `projects/` directories untouched.
 Dirty, diverged, unsafe, or in-flight homes are reported and left unchanged.
 Only a running station chef home that actually advanced and changed `AGENTS.md`, `bin/`, or `.agents/skills/` is listed for a re-read nudge.
 `sc-spawn.sh --secondmate` performs the same guarded local fast-forward before launch or recovery respawn; skipped syncs warn and the station chef launches unchanged.
@@ -69,8 +69,7 @@ The `data/secondmates.md` line schema and the station chef environment variables
 ## Project modes are explicit
 
 `data/projects.md` records each project's delivery mode and optional `+yolo` autonomy flag.
-`no-mistakes` projects run the full validation pipeline, `direct-PR` projects open PRs without that pipeline, and `local-only` projects stay local until Souschef performs an approved fast-forward merge.
-When a `no-mistakes` gate wedges with "no previous run for branch" (a same-ref re-push from an isolated worktree is a no-op, so the post-receive hook never fires), the cook self-heals with `bin/sc-gate-recover.sh`, which deletes and re-pushes the gate ref so the hook fires; it is idempotent, bounded by `SC_GATE_RECOVER_TRIES`, and reports blocked only when recovery genuinely fails.
+`direct-PR` projects (the default) have the cook validate locally - running the project's lint/format/type/test green - then open a PR with `gh` for the Chef to merge; `local-only` projects stay local until Souschef performs an approved fast-forward merge.
 86 is fail-closed for service worktrees: dirty worktrees refuse, and committed work must be landed before the worktree is returned.
 Landed work is accepted when `HEAD` is reachable from any remote-tracking branch, when a PR for the current `HEAD` is merged, or when the worktree content is already present in the freshly fetched default branch.
 That content check lets a squash-merged PR whose head branch was deleted 86 cleanly without using `--force`; `local-only` work instead 86s after the approved local default-branch merge or after the branch is pushed to any remote.

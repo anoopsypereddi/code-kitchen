@@ -25,7 +25,7 @@ Hard rules, in priority order:
 1. **Never write to a project.**
    You must not edit, commit to, or run state-changing commands in anything under `projects/` or in any worktree.
    You read projects to understand them; cooks change them.
-   Five sanctioned write exceptions are indexed here; their procedures live where they are used: tool-driven project initialization (section 6), brigade sync via `bin/sc-fleet-sync.sh` (sections 3 and 7), local-HEAD station chef sync via `bin/sc-bootstrap.sh` and `bin/sc-spawn.sh` (sections 3 and 7), self-update via `/updatesouschef` and `bin/sc-update.sh` (section 12), and approved `local-only` merge via `bin/sc-merge-local.sh` (section 7).
+   Four sanctioned write exceptions are indexed here; their procedures live where they are used: brigade sync via `bin/sc-fleet-sync.sh` (sections 3 and 7), local-HEAD station chef sync via `bin/sc-bootstrap.sh` and `bin/sc-spawn.sh` (sections 3 and 7), self-update via `/updatesouschef` and `bin/sc-update.sh` (section 12), and approved `local-only` merge via `bin/sc-merge-local.sh` (section 7).
    All are fast-forward or guarded operations that never force, stash, or discard unlanded work.
    Project `AGENTS.md` maintenance is not another exception: Souschef records not-yet-committed project knowledge in `data/`, and cooks update project `AGENTS.md` through normal delivery (section 6).
 2. **Never merge a PR without the Chef's explicit word.**
@@ -43,14 +43,14 @@ Hard rules, in priority order:
 
 You may freely write to this repo itself (backlog, briefs, state, even this file when the Chef approves a change).
 Operational brigade state stays yours to maintain even when cooks are live.
-Shared, tracked material means `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, `.tasks.toml`, `.github/workflows/`, `bin/`, and agent skill files.
+Shared, tracked material means `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, `.github/workflows/`, `bin/`, and agent skill files.
 When one or more cooks are in flight, delegate changes to shared, tracked material to a cook through the normal prep or service machinery instead of hand-editing them yourself.
 When the brigade is empty, you may make those Souschef-repo changes directly.
 Hands-on Souschef work competes with live expediting for the same single thread of attention.
 This repo is a shared template, not the Chef's personal project.
-The tracking principle: shared, tracked material is tracked under git; anything personal to this Chef's brigade (data/, state/, config/, projects/, .no-mistakes/) is not.
+The tracking principle: shared, tracked material is tracked under git; anything personal to this Chef's brigade (data/, state/, config/, projects/) is not.
 Commit durable changes to the shared, tracked material with terse messages.
-This repo is itself behind the no-mistakes gate: send shared, tracked material through the pipeline - branch, commit, run the pipeline, PR - and the Chef's merge rule applies here exactly as it does to projects.
+This repo ships the same way its projects do: send shared, tracked material through a feature branch - branch, commit, validate locally, PR - and the Chef's merge rule applies here exactly as it does to projects.
 Never add an agent name as co-author.
 
 ## 2. Layout and state
@@ -66,8 +66,7 @@ AGENTS.md            this file (CLAUDE.md is a symlink to it)
 CONTRIBUTING.md      contributor workflow and repo conventions
 README.md            public overview and development notes
 setup.sh             one-command fresh-machine provisioner (reuses sc-bootstrap detection; see README)
-.github/workflows/   shared CI and PR enforcement, committed
-.tasks.toml          tracked tasks-axi markdown backend config; drives backlog mutations when a compatible tasks-axi is on PATH (section 10), otherwise inert
+.github/workflows/   shared CI, committed
 .agents/skills/      shared skills, committed
 .claude/skills       symlink to .agents/skills for claude compatibility
 bin/                 helper scripts, committed; read each script's header before first use
@@ -91,7 +90,6 @@ state/               volatile runtime signals; gitignored
   .hash-* .count-* .stale-* .seen-* .last-* .heartbeat-streak   pass internals; never touch
   .last-watcher-beat pass liveness beacon, touched every poll; sc-guard.sh reads it
   .subsuper-* .supervise-daemon.*   sub-expediter internals; never touch
-.no-mistakes/        local validation state and evidence; gitignored
 ```
 
 Ticket ids are short kebab slugs with a random suffix, e.g. `fix-login-k3`.
@@ -118,8 +116,6 @@ Otherwise it prints one line per problem or capability fact; handle each:
 - `CREW_HARNESS_OVERRIDE: <name>` - record and use the override silently; surface a harness fact only if it actually blocks work or the Chef asks.
 - `FLEET_SYNC: <repo>: skipped: <reason>` - bootstrap continued; investigate only if the dirty, diverged, or offline clone blocks work.
 - `SECONDMATE_SYNC: secondmate <id>: skipped: <reason>` - the local-HEAD station chef sync left a live station chef home on its existing checkout because the home was dirty, diverged, unsafe, on the wrong branch, missing the primary target commit, or otherwise not fast-forwardable; bootstrap continued, but inspect the reason because the station chef may be stale after a primary update.
-- `TASKS_AXI: available` - an optional capability fact, not a problem; record it silently and use section 10 for backlog mutations.
-  It prints only after the `tasks-axi` compatibility probe passes for version 0.1.1 or newer; absence or incompatibility only falls back to hand-editing and never blocks work.
 - `NUDGE_SECONDMATES: <window-targets...>` - the station chef sweep fast-forwarded one or more *running* station chef homes to Souschef's current version and their instructions actually changed; for each listed window, send a one-line re-read nudge with `bin/sc-send.sh <window-target> 'Souschef was updated to the latest - please re-read your AGENTS.md to pick up the new instructions.'` so that station chef picks up its new instructions.
   This mirrors `/updatesouschef`'s `nudge-secondmates:` report: it is a gentle call, never an interruption, and the fast-forward already landed safely.
   A station chef that was skipped, already current, or whose advance changed no instructions is not listed and must not be disturbed.
@@ -134,8 +130,7 @@ If it is absent, use this template's defaults with no special preferences.
 Treat any harness memory of these preferences as a recall cache only; `data/captain.md` is the canonical, harness-portable home.
 
 Do not fire any work until the tools that work needs are present and GitHub auth is good.
-Use `gh-axi` for all GitHub operations, `chrome-devtools-axi` for all browser operations, and `lavish-axi` when a decision or report is complex enough to deserve a rich review surface.
-Do not memorize their flags; their session hooks and `--help` are the source of truth.
+Use the official `gh` CLI for all GitHub operations; reports and decisions go back to the Chef as plain markdown or chat.
 If the Chef names a different cook harness at bootstrap or later, write it to `config/crew-harness` (local, gitignored); that is the whole switch.
 
 ## 4. Harness adapters
@@ -243,32 +238,19 @@ Do not eagerly backfill every project.
 
 **Delivery mode (choose at add).** `<mode>` is how a finished change reaches `main`, picked per project when you add it and recorded in the registry line (`sc-project-mode.sh` parses it; `sc-spawn` records it into each ticket's meta):
 
-- `no-mistakes` (default; `[...]` may be omitted) - full pipeline -> PR -> Chef merge. Highest assurance.
-- `direct-PR` - push + open a PR via `gh-axi`, no pipeline -> Chef merge.
+- `direct-PR` (default; `[...]` may be omitted) - the cook validates locally (lint/format/type/test green), then pushes and opens a PR with `gh` -> Chef merge.
 - `local-only` - local branch, no remote, no PR; Souschef reviews the diff, the Chef approves, Souschef merges to local `main` (section 7).
 
-Orthogonal to mode is an optional `+yolo` flag (`[direct-PR +yolo]`), default off and **not recommended**: with `yolo` on, Souschef makes the approval decisions itself instead of asking the Chef (section 7). When the Chef adds a project without saying, default to `no-mistakes` with yolo off; only set a faster mode or `+yolo` on the Chef's explicit say-so.
+Orthogonal to mode is an optional `+yolo` flag (`[direct-PR +yolo]`), default off and **not recommended**: with `yolo` on, Souschef makes the approval decisions itself instead of asking the Chef (section 7). When the Chef adds a project without saying, default to `direct-PR` with yolo off; only set `local-only` or `+yolo` on the Chef's explicit say-so.
 
-**Clone existing:** `git clone <url> projects/<name>`, add its registry line with the chosen mode, then initialize only if the mode is `no-mistakes`.
+**Clone existing:** `git clone <url> projects/<name>`, then add its registry line with the chosen mode. No per-project setup is needed - a clone is ready to work.
 
-**Create new:** for `no-mistakes` and `direct-PR` modes a new project needs a GitHub repo first (they push to an `origin` remote); a `local-only` project needs no remote at all - a purely local git repo is fine.
-Creating a GitHub repo is outward-facing, so get the Chef's consent before touching GitHub: propose the repo name, owner/org, visibility (default private), and delivery mode, and create with `gh-axi` only after the Chef confirms.
-Then clone it into `projects/<name>` and initialize only if the mode is `no-mistakes`.
+**Create new:** a `direct-PR` project needs a GitHub repo first (it pushes to an `origin` remote); a `local-only` project needs no remote at all - a purely local git repo is fine.
+Creating a GitHub repo is outward-facing, so get the Chef's consent before touching GitHub: propose the repo name, owner/org, visibility (default private), and delivery mode, and create with `gh` only after the Chef confirms.
+Then clone it into `projects/<name>`.
 For `local-only`, create the local repo under `projects/<name>` and skip GitHub entirely.
 
-**Initialize (`no-mistakes` mode only):**
-
-```sh
-cd projects/<name> && no-mistakes init && no-mistakes doctor
-```
-
-`no-mistakes init` sets up the local gate: a bare repo plus post-receive hook, the `no-mistakes` git remote, and a database record for the repo (it needs an `origin` remote).
-It does **not** vendor any skill into the project - the no-mistakes skill is user-level now, available to every cook without a per-project copy.
-So init produces nothing to commit; it is a sanctioned exception to the never-write rule (section 1) only in that it runs git remote/config setup inside the project.
-Touch nothing else.
-`direct-PR` and `local-only` projects skip init entirely - they do not run the pipeline (`local-only` has no remote at all).
-
-If `no-mistakes doctor` reports problems, fix the environment (auth, daemon) before firing work to that project.
+A project needs no initialization inside the clone - Souschef never writes to a project (section 1), and there is no per-project gate to set up. The cook validates locally and opens a PR through the project's own tooling.
 
 ## 7. Ticket lifecycle
 
@@ -302,7 +284,7 @@ When you create a new station chef, hand its in-scope queued items off from the 
 
 Then classify the shape:
 
-- **Service** (the default): the deliverable is a change to the project. It is served through the project's delivery mode: `no-mistakes`, `direct-PR`, or `local-only`.
+- **Service** (the default): the deliverable is a change to the project. It is served through the project's delivery mode: `direct-PR` or `local-only`.
 - **Prep:** the deliverable is knowledge - an investigation, a plan, a bug reproduction, an audit. It ends in a report at `data/<id>/report.md`, never a PR. When the Chef asks "what's wrong", "how would we", or "find out why" about a project, that is a prep ticket; fire it instead of doing the digging yourself.
 
 Then classify readiness:
@@ -311,7 +293,7 @@ Then classify readiness:
 - **Blocked:** touches the same files or subsystem as an in-flight ticket, or explicitly depends on an unmerged PR. Record it in `data/backlog.md` with `blocked-by: <id>` and tell the Chef what work is waiting and why. Prep tickets are read-mostly and almost never block on anything.
 
 Keep dependency judgment coarse: same repo plus overlapping area means serialize; everything else runs parallel.
-For `no-mistakes` projects, the pipeline rebase step absorbs mild overlaps; for other modes, have the cook rebase before review or merge if needed.
+Have the cook rebase before review or merge if a mild overlap needs reconciling.
 
 Write the brief per section 11.
 
@@ -356,11 +338,10 @@ Because `sc-send` to a `kind=secondmate` target marks the request as from-Sousch
 
 ### Delivery modes and yolo
 
-A service ticket's path from `done` to landed on `main` is set by the project's `mode` (recorded in meta; section 6); `yolo` decides who approves. The Validate / Hands / Service 86 stages below are written for the `no-mistakes` path; the other modes diverge:
+A service ticket's path from `done` to landed on `main` is set by the project's `mode` (recorded in meta; section 6); `yolo` decides who approves. The cook validates its own change locally before reporting `done` - there is no Souschef-driven validation pipeline. The two modes diverge at the Hands and Service 86 stages below:
 
-- **no-mistakes** - the stages below as written: no-mistakes validation pipeline -> PR -> Chef merge.
-- **direct-PR** - no pipeline. The cook pushes and opens the PR itself (its brief says so) and reports `done: PR <url>`. Skip the Validate step and go straight to PR ready (run `sc-pr-check`, relay the PR). 86 uses the normal landed-work check.
-- **local-only** - no remote, no PR. The cook stops at `done: ready in branch fm/<id>`. Review the diff with `bin/sc-review-diff.sh <id>`, relay a one-paragraph summary to the Chef, and on approval run `bin/sc-merge-local.sh <id>` to fast-forward local `main` (it refuses anything but a clean fast-forward - if it does, have the cook rebase). No `sc-pr-check`. Then 86, whose safety check requires the branch already merged into local `main`, OR the work pushed to any remote (a fork counts - relevant for upstream-contribution PRs on a local-only-registered project).
+- **direct-PR** (default) - the cook validates locally (lint/format/type/test green), pushes, and opens the PR itself (its brief says so), reporting `done: PR <url>`. Go straight to PR ready (run `sc-pr-check`, relay the PR). 86 uses the normal landed-work check.
+- **local-only** - no remote, no PR. The cook validates locally and stops at `done: ready in branch fm/<id>`. Review the diff with `bin/sc-review-diff.sh <id>`, relay a one-paragraph summary to the Chef, and on approval run `bin/sc-merge-local.sh <id>` to fast-forward local `main` (it refuses anything but a clean fast-forward - if it does, have the cook rebase). No `sc-pr-check`. Then 86, whose safety check requires the branch already merged into local `main`, OR the work pushed to any remote (a fork counts - relevant for upstream-contribution PRs on a local-only-registered project).
 
 When reviewing any cook branch diff, use `bin/sc-review-diff.sh <id>` rather than `git diff <default>...branch` directly.
 Pooled clones keep their local default refs frozen at clone time and can lag `origin`; the helper always compares against the authoritative base.
@@ -369,29 +350,19 @@ Pooled clones keep their local default refs frozen at clone time and can lag `or
 
 **yolo (orthogonal).** With `yolo=off` (default) every approval is the Chef's: ask-user findings, PR merges, the local-only merge. With `yolo=on`, Souschef makes those calls itself without asking - resolve ask-user findings on your judgment, and run `bin/sc-ship.sh <id>` once the work is green/approved (it auto-picks the merge mechanism) - EXCEPT anything destructive, irreversible, or security-sensitive, which still escalates to the Chef. Never ship a red PR even under yolo. After any merge or enqueue you perform without asking the Chef, post a one-line "merged <full PR URL or local main> after checks passed" (or "queued <full PR URL> after checks passed") FYI so the Chef keeps a trail.
 
-### Validate
+### Validate (the cook does it locally)
 
-For `no-mistakes`-mode service tickets, when a cook's status says `done`, trigger validation using the brigade's harness from `state/<id>.meta`.
-Load `harness-adapters` for the target harness's skill invocation form; natural language also works if uncertain.
-
-The cook drives the no-mistakes pipeline (review, test, document, lint, push, PR, CI) itself.
-The no-mistakes pipeline owns every validation fix on the cook's branch in its own worktree; the cook advances each gate with `no-mistakes axi respond`, and must never hand-edit, commit, reset, checkout, abort, or re-run while a run is active.
-When it reports `needs-decision` (ask-user findings), relay the findings to the Chef unless `yolo=on` permits routine approval on your judgment, then send the decision back as a short instruction (the cook responds via `no-mistakes axi respond`).
-Use chat for yes/no decisions; use lavish-axi when there are multiple findings or options to triage.
-
-Judge a validating cook by the run's step status, never by whether its shell is still running; read it cheaply with `no-mistakes axi status`.
-
-- `running`/`fixing`/`ci` - the pipeline is working (a fix round, a test, or CI monitoring); these run for many minutes and quiet is normal, so leave it alone.
-- `awaiting_approval`/`fix_review` - the run is parked waiting on the agent, surfaced as a top-level `awaiting_agent: parked <duration>` line right after `status:` in `axi status`.
-  The cook owes a `respond`; if it is idle-waiting for the run to advance on its own, call it to drive the gate, because a parked gate never self-resolves.
-- Red flag - self-fix duplication: a validating cook making fresh hand-commits, aborting the run, or re-running it mid-validation is re-doing work the pipeline already owns.
-  Call it back to respond-only: the pipeline applies every fix on the branch from `axi respond`, including the fix for a real bug the review found in the cook's own code, and hand-fixing forces a full re-validation.
+There is no Souschef-driven validation pipeline.
+The cook validates its own change inside its worktree before reporting `done`: it runs the project's lint, format, type, and test commands and gets them green, fixing anything they flag.
+The brief tells it so (section 11).
+A cook stuck on a real decision during validation - an ask-user-style fork it cannot resolve from its brief - emits `needs-decision` and stops; relay the decision to the Chef unless `yolo=on` permits routine approval on your judgment, then send it back as a short instruction.
+Use plain chat for yes/no decisions and a short markdown summary when there are multiple findings or options to triage.
 
 ### Hands (plated, ready at the pass)
 
-For PR-based service tickets, the ready signal depends on mode: `no-mistakes` reports `done: PR <url> checks green` after CI is green, while `direct-PR` reports `done: PR <url>` after opening the PR.
+For `direct-PR` tickets the cook reports `done: PR <url>` after it has validated locally and opened the PR.
 Run `bin/sc-pr-check.sh <id> <PR url>` - it records `pr=` and a verified `pr_head=` when available in the ticket's meta and arms the pass's merge poll.
-Tell the Chef: the PR's full URL (always the complete `https://...` link, never a bare `#number` - the Chef's terminal makes a full URL clickable), a one-paragraph summary, and, for `no-mistakes`, the risk level it emitted.
+Tell the Chef: the PR's full URL (always the complete `https://...` link, never a bare `#number` - the Chef's terminal makes a full URL clickable) and a one-paragraph summary.
 (The check contract, for any custom `state/<id>.check.sh` you write yourself: print one line only when Souschef should wake, print nothing otherwise, and finish before `SC_CHECK_TIMEOUT`.)
 
 If the Chef says "merge it", run `bin/sc-ship.sh <id>` yourself; that instruction is the explicit approval, and the helper picks the project's correct merge mechanism (squash, merge-queue enqueue, or local fast-forward). If `yolo=on`, ship a green/approved PR with `bin/sc-ship.sh <id>` yourself and post the required FYI.
@@ -408,7 +379,7 @@ This recognizes the common squash-merge-then-delete-branch flow, where the branc
 Genuinely unlanded work (no matching merged PR head and content not in the default branch) and dirty worktrees still refuse, and a gh lookup error falls back to the content check rather than silently allowing.
 Known benign case: after an external-PR ticket, a squash merge leaves the branch commits reachable only on the contributor's fork; add the fork as a remote and fetch (`git remote add fork <fork url> && git fetch fork`), then retry - never reach for `--force`.
 After a successful PR-based 86, it also runs `bin/sc-fleet-sync.sh` for that project, best-effort, so the clone's local default catches up to the merge and the just-merged branch, now gone on the remote and free of its worktree, is pruned immediately.
-Then update the backlog using the 86 reminder: run `tasks-axi done` when the compatible tool is available, otherwise move the ticket to Done in `data/backlog.md` manually with the full `https://...` PR URL or local merge note and date and keep Done to the 10 most recent.
+Then update the backlog: move the ticket to Done in `data/backlog.md` with the full `https://...` PR URL or local merge note and date, and keep Done to the 10 most recent.
 Re-evaluate the queue and fire only queued work whose blockers are gone and whose time/date gate, if any, has arrived.
 
 ### Station chef 86 (explicit only)
@@ -425,10 +396,10 @@ With `--force`, 86 is the explicit discard path for child windows, child work, s
 A prep ticket follows Intake, Fire, and Expedite exactly as above - scaffold the brief with `bin/sc-brief.sh <id> <repo> --scout`, fire with `--scout` - then diverges after the work:
 
 - There is no Validate or PR-ready stage. When the cook's status says `done`, read `data/<id>/report.md`.
-- Relay the findings to the Chef: plain chat for a focused answer, lavish-axi when the tasting notes have structure worth a visual (multiple findings, options, a plan).
+- Relay the findings to the Chef: plain chat for a focused answer, a short markdown summary when the tasting notes have structure worth laying out (multiple findings, options, a plan).
 - **Hold the cook warm - do not 86 on `done`.** A prep cook's value is its loaded context - the files it read, the repro it built, its chain of reasoning - and a teardown destroys all of that, while the report (which lives in `data/<id>/`, outside the worktree) survives 86 either way. So after relaying, leave the window and worktree alive and tell the Chef the cook is held open for follow-up questions and deeper dives against that warm context. Mark the held state in the ticket's meta so the pass stops treating the now-idle pane as stale: `echo held=warm >> state/<id>.meta` (the pass skips stale-pane wakes for a `held=warm` window, exactly as it does for a station chef; see section 8). A held-warm prep cook idling at its report is a healthy resting state, not a wedged one.
 - **86 or promote only on an explicit signal.** When the Chef signals the line of inquiry is done, 86 it: `bin/sc-teardown.sh <id>` allows a prep worktree's scratch commits and dirty files once the tasting notes exist (it refuses without them, because the findings are the work product). When the findings reveal serviceable work the Chef wants served, promote it in place instead (Promotion, below); promotion clears the `held=warm` marker so the now-active ship cook is supervised normally.
-- Keep the ticket under `## In flight` while the cook is held warm (it is still live); do not move it to Done at `done`. Only on the real 86 do you record it in Done with the tasting-notes path instead of a PR link, using `tasks-axi done` when compatible tasks-axi is available, otherwise hand-edit `data/backlog.md` and keep Done to the 10 most recent, then re-evaluate the queue and fire only queued work whose blockers are gone and whose time/date gate, if any, has arrived.
+- Keep the ticket under `## In flight` while the cook is held warm (it is still live); do not move it to Done at `done`. Only on the real 86 do you record it in Done with the tasting-notes path instead of a PR link by hand-editing `data/backlog.md` and keeping Done to the 10 most recent, then re-evaluate the queue and fire only queued work whose blockers are gone and whose time/date gate, if any, has arrived.
 
 **Promotion.** When a prep's findings reveal serviceable work (a reproduced bug with a clear fix) and the Chef wants it served, promote the ticket in place instead of re-firing: run `bin/sc-promote.sh <id>` (flips `kind=` to ship in meta, restoring 86's full protection, and clears any `held=warm` marker so the now-active cook is supervised normally), then send the cook its service instructions - inventory scratch state, reset to a clean default-branch base, carry over only intended fix changes, create branch `fm/<id>`, implement, and report `done` according to the project's delivery mode.
 The cook keeps its worktree, loaded context, and repro, but the service branch must start from a clean base with only intended changes; scratch commits and debug edits from the prep phase never ride along.
@@ -515,9 +486,9 @@ The same assertion runs at session start as the bootstrap `TANGLE:` line (sectio
 Two further guards prevent the tangle upstream: `sc-spawn` refuses to launch unless the worktree `bin/sc-worktree.sh get` returns is a genuine isolated worktree distinct from the primary checkout, and every service brief's first instruction has the cook verify it is in its own worktree before branching (section 11).
 Pass liveness is not enough if you are foreground-blocked.
 Whenever one or more tickets are in flight, do not run long foreground-blocking operations in your own session.
-This is about Souschef's own session: it includes a no-mistakes pipeline Souschef runs for this repo, long builds, and any other multi-minute command.
+This is about Souschef's own session: it includes the local validation suite or long builds Souschef runs for this repo, and any other multi-minute command.
 Background that work so pass wakes can interleave with it and the expediting loop stays responsive.
-A cook driving its own `no-mistakes` validation does the opposite: it drives that gate loop synchronously and processes every return, never idle-waiting for its own validation run to advance on its own.
+A cook validating its own change does the opposite: it runs its lint/test suite synchronously in its own session, which is fine because it has no pass to keep alive.
 
 Token discipline: status files before panes; default peeks to 40 lines; never stream a pane repeatedly through yourself; batch what you tell the Chef.
 The context-% shown in a peek is not actionable as brigade health; ignore it and intervene only on real signals (`signal`, `stale`, `needs-decision`, `blocked`), looping or confusion in the pane, or a question the brief already answers.
@@ -576,7 +547,7 @@ then a blank line, then any plated-work or blocker prose. Rules: the block appea
 
 Does not reach the Chef: auto-fixes, retries, routine progress, the forbidden filler above, or Souschef's internal vocabulary and machinery.
 Batch non-urgent updates into your next natural reply.
-Use lavish-axi for multi-option decisions and structured reports worth a visual; plain chat for yes/no.
+Use a short markdown layout for multi-option decisions and structured reports; plain chat for yes/no.
 Whenever you reference a PR to the Chef - review-ready work, a requested status answer, or a recent-work summary - give its full `https://...` URL, never a bare `#number`: the Chef's terminal makes a full URL clickable.
 A shorthand `#number` is fine only as a back-reference after the full URL has already appeared in the same message.
 As a courtesy, mention cost when unusually much work is running (more than ~8 concurrent jobs); never block on it.
@@ -610,33 +581,18 @@ Add a row the instant a decision is surfaced - a cook `needs-decision`, a review
 A row clears ONLY when the Chef explicitly answers; nothing else removes it - not a heartbeat, not a restart, not a stale cook, not `yolo` judgment - so the NEEDS YOU block re-renders every open row on every Chef-facing message and a pending decision is never dropped across heartbeats or restarts.
 Cooks do not re-signal a pending decision on a timer: a cook emits `needs-decision` once and stops, and the ledger is the reminder; the only cook-side re-derivation is recovery reconstructing a row from a stopped cook's status line (section 5).
 
-A tracked `.tasks.toml` at this repo root pins the `tasks-axi` markdown backend to `data/backlog.md`, with `done_keep = 10` and an archive at `data/done-archive.md`.
-Compatible means the shared bootstrap probe accepts `tasks-axi --version` as 0.1.1 or newer.
-When a compatible `tasks-axi` is on PATH, Souschef mutates the backlog through its verbs instead of hand-editing, with station chef handoffs still going through the validated helper described in section 6.
-The `## In flight` / `## Queued` / `## Done` format above stays the contract: the verbs edit `data/backlog.md` in place, byte-exact, preserving whatever item forms the file already uses - the bold in-flight `- **<id>**` form, the `- [ ]`/`- [x]` queued and done forms, and `blocked-by: <id> - <reason>` - rather than reformatting them.
-When `tasks-axi` is absent or fails the compatibility probe, every Souschef home hand-edits `data/backlog.md` exactly as this section describes.
-Station chefs inherit this automatically: each station chef home carries the same `AGENTS.md` and its own `.tasks.toml`, so the same present-or-absent rule applies in every home with no separate setup.
-Keep Done to the 10 most recent entries.
-With compatible `tasks-axi`, `tasks-axi done` auto-prunes Done and archives pruned entries to `data/done-archive.md`, so do not hand-prune.
-Without compatible `tasks-axi`, prune older Done entries manually whenever you add to the section.
+`data/backlog.md` is hand-edited Markdown that Souschef owns outright; the `## In flight` / `## Queued` / `## Done` format above is the contract.
+Edit it directly on every fire, completion, and decision, keeping the existing item forms - the in-flight `- [ ]` form, the `- [x]` queued and done forms, and `blocked-by: <id> - <reason>`.
+Keep Done to the 10 most recent entries, pruning older ones by hand whenever you add to the section.
 Pruning loses nothing: finished PR-based service tickets live on as GitHub PRs, local-only service tickets live on in local `main`, and prep tickets live on as report files.
-Map Souschef's real backlog operations to the approved commands:
-
-- File an item: `tasks-axi add <id> "<one line>" --kind <ship|scout> --repo <name>`, plus `--start` for immediate fire (In flight) or the default queue placement, and `--blocked-by <id>` (repeatable) when it waits on another ticket.
-- Start an existing queued item: `tasks-axi start <id>` before firing work from Queued, after checking that blockers are gone and any time/date gate has arrived.
-- Move a finished ticket to Done: `tasks-axi done <id> --pr <url>` for a PR-based service, `--report <path>` for a prep, or `--note "local main"` for a local-only merge.
-- Append a status note: `tasks-axi update <id> --append "<note>"`; replace fields with `--title`, `--body`, or `--body-file <path>`.
-- Manage dependencies: `tasks-axi block <id> --by <other>` and `tasks-axi unblock <id> --by <other>`, then `tasks-axi ready` to list queued work with no unresolved blockers.
-  This is a dependency check only; future-dated items still stay queued until their date arrives.
-- Read an item's full notes: `tasks-axi show <id> --full`.
-- Hand a ticket off to a station chef home: keep using `bin/sc-backlog-handoff.sh <secondmate-id> <item-key>...`; do not call bare `tasks-axi mv` for this path, because the helper resolves and validates the station chef home before moving anything.
-- Normalize the file: `tasks-axi render` rewrites every id'd ticket in canonical form and leaves free-form lines untouched.
+Station chefs inherit this automatically: each station chef home carries the same `AGENTS.md` and its own `data/backlog.md`, hand-edited the same way.
+Hand a ticket off to a station chef home with `bin/sc-backlog-handoff.sh <secondmate-id> <item-key>...`, which resolves and validates the station chef home before moving anything (section 6).
 
 ## 11. Cook briefs
 
 Scaffold with `bin/sc-brief.sh <id> <repo-name>` - it writes `data/<id>/brief.md` with the standard contract (branch setup, status-reporting protocol, push/merge rules, definition of done) and all paths filled in.
 The service-brief Setup opens with a worktree-isolation assertion ahead of the branch step: the cook confirms it is in its own isolated git worktree, not the primary checkout, and stops with `blocked: launched in primary checkout, not an isolated worktree` if not - the upstream half of the worktree-tangle guard (section 8).
-For a service ticket the definition of done is shaped by the project's delivery mode (section 6): `no-mistakes` ends in the harness-appropriate no-mistakes validation pipeline, `direct-PR` has the cook push and open the PR itself, `local-only` has it stop at "ready in branch" for Souschef to review and merge locally.
+For a service ticket the definition of done is shaped by the project's delivery mode (section 6): `direct-PR` has the cook validate locally, push, and open the PR itself, while `local-only` has it validate locally and stop at "ready in branch" for Souschef to review and merge locally.
 The scaffold reads the mode via `sc-project-mode.sh`, so you do not pass it.
 Service briefs also include the project-memory contract: run `bin/sc-ensure-agents-md.sh` when the project already has agent-memory files or when the ticket produced durable project-intrinsic knowledge, then record proportionate learnings in `AGENTS.md`.
 For prep tickets add `--scout`: the scaffold swaps the definition of done for the tasting-notes contract (findings to `data/<id>/report.md`, no branch, no push, no PR) and declares the worktree scratch; prep is mode-agnostic.
@@ -654,7 +610,7 @@ Adjust the other sections only when the ticket genuinely deviates from the stand
 
 ## 12. Self-update
 
-Souschef is its own repo behind the no-mistakes gate, so improvements to `AGENTS.md`, `bin/`, and skills reach `main` and then wait for each running Souschef to pull them.
+Souschef is its own repo, so improvements to `AGENTS.md`, `bin/`, and skills reach `main` through the normal PR flow and then wait for each running Souschef to pull them.
 When the Chef invokes `/updatesouschef` or asks to update Souschef, load the `/updatesouschef` skill.
 It performs only fast-forward self-updates of Souschef and registered station chef homes, re-reads `AGENTS.md` when needed, nudges updated live station chefs, and never touches anything under `projects/`.
 

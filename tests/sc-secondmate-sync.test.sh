@@ -49,7 +49,7 @@ new_world() {
   git init -q -b main "$w/main"
   # Mirror the real repo: the gitignored operational dirs never dirty a worktree,
   # so a secondmate home's data/state/projects can never block its fast-forward.
-  printf 'projects/\nstate/\ndata/\n.no-mistakes/\nconfig/crew-harness\n' > "$w/main/.gitignore"
+  printf 'projects/\nstate/\ndata/\nconfig/crew-harness\n' > "$w/main/.gitignore"
   printf 'v1\n' > "$w/main/AGENTS.md"
   printf 'r1\n' > "$w/main/README.md"
   mkdir -p "$w/main/bin" "$w/main/.agents/skills"
@@ -264,7 +264,9 @@ make_fake_toolchain() {
   local dir=$1 fakebin
   fakebin="$dir/fakebin"
   mkdir -p "$fakebin"
-  sc_fake_exit0 "$fakebin" tmux node no-mistakes gh-axi chrome-devtools-axi lavish-axi
+  # Fake only tmux and node; git/npm/curl must stay REAL so the local-HEAD
+  # secondmate fast-forward (real git) actually runs. gh is mocked below.
+  sc_fake_exit0 "$fakebin" tmux node
   cat > "$fakebin/gh" <<'SH'
 #!/usr/bin/env bash
 exit 0

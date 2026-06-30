@@ -3,9 +3,9 @@
 # suites (sc-secondmate-lifecycle-e2e and sc-secondmate-safety).
 #
 # These mocks encode secondmate-lifecycle behavior (fake tmux that logs window
-# ops, fake sc-worktree.sh that leases/returns homes, fake no-mistakes that
-# records init/doctor), so they live here rather than in the generic tests/lib.sh. The
-# generic git/identity/meta primitives come from lib.sh, which this file pulls in.
+# ops, fake sc-worktree.sh that leases/returns homes), so they live here rather
+# than in the generic tests/lib.sh. The generic git/identity/meta primitives come
+# from lib.sh, which this file pulls in.
 
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
@@ -97,45 +97,6 @@ SH
   chmod +x "$fakebin/tmux"
   chmod +x "$fakebin/sc-worktree.sh"
   : > "$dir/tmux.log"
-  printf '%s\n' "$fakebin"
-}
-
-# A fake no-mistakes that touches .no-mistakes-init / .no-mistakes-doctor markers.
-make_fake_no_mistakes() {
-  local dir=$1 fakebin
-  fakebin=$(sc_fakebin "$dir")
-  cat > "$fakebin/no-mistakes" <<'SH'
-#!/usr/bin/env bash
-set -eu
-case "${1:-}" in
-  init) touch .no-mistakes-init ;;
-  doctor) touch .no-mistakes-doctor ;;
-  *) exit 2 ;;
-esac
-SH
-  chmod +x "$fakebin/no-mistakes"
-  printf '%s\n' "$fakebin"
-}
-
-# A fake no-mistakes that records each "<pwd>\t<verb>" call to
-# SC_FAKE_NO_MISTAKES_LOG and fails for the project named SC_FAKE_NO_MISTAKES_FAIL_PROJECT.
-make_recording_no_mistakes() {
-  local dir=$1 fakebin
-  fakebin=$(sc_fakebin "$dir")
-  cat > "$fakebin/no-mistakes" <<'SH'
-#!/usr/bin/env bash
-set -eu
-printf '%s\t%s\n' "$PWD" "${1:-}" >> "$SC_FAKE_NO_MISTAKES_LOG"
-if [ "$(basename "$PWD")" = "${SC_FAKE_NO_MISTAKES_FAIL_PROJECT:-}" ]; then
-  exit 1
-fi
-case "${1:-}" in
-  init) touch .no-mistakes-init ;;
-  doctor) touch .no-mistakes-doctor ;;
-  *) exit 2 ;;
-esac
-SH
-  chmod +x "$fakebin/no-mistakes"
   printf '%s\n' "$fakebin"
 }
 

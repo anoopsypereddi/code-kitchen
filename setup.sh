@@ -36,53 +36,13 @@ else
   echo "all present, skipping."
 fi
 
-# 2. npm global tooling, installed in one shot, then per-tool setup hooks.
-say "npm global tools (gh-axi, chrome-devtools-axi, lavish-axi)"
-have npm || { echo "error: npm is required but missing; install Node.js/npm first" >&2; exit 1; }
-NPM_GLOBALS="gh-axi chrome-devtools-axi lavish-axi"
-need=""
-for p in $NPM_GLOBALS; do
-  have "$p" || need="$need $p"
-done
-if [ -n "$need" ]; then
-  echo "installing:$need"
-  # shellcheck disable=SC2086  # installing the whole list in one shot is intended
-  npm install -g $need
-  for p in $need; do
-    echo "$p setup hooks"
-    "$p" setup hooks
-  done
-else
-  echo "all present, skipping."
-fi
-
-# tasks-axi is an optional backlog-management capability; install best-effort so
-# an unreachable package never blocks the required setup above.
-say "Optional: tasks-axi (backlog management)"
-if have tasks-axi; then
-  echo "present, skipping."
-elif npm install -g tasks-axi >/dev/null 2>&1; then
-  echo "installed tasks-axi."
-else
-  echo "skipped: tasks-axi not installable (optional; the brigade falls back to hand-edited backlog)."
-fi
-
-# 3. Org installer (no-mistakes), via sc-bootstrap's curl-pipe URL. Worktrees are
-#    managed by code-kitchen's own bin/sc-worktree.sh (git worktree), so there is
-#    no third-party worktree tool to install.
-say "Org tools (no-mistakes)"
-if have no-mistakes; then
-  echo "all present, skipping."
-else
-  echo "installing: no-mistakes"
-  "$BOOT" install no-mistakes
-fi
-
-# 4. Re-run detection so any remaining gaps surface now, not at first dispatch.
+# 2. Re-run detection so any remaining gaps surface now, not at first dispatch.
+#    Everything the kitchen needs is the base CLI toolset above plus the agent
+#    harness; there are no third-party toolchain tools to install.
 say "Bootstrap detection (remaining gaps, if any)"
 "$BOOT" || true
 
-# 5. The manual steps that cannot be scripted.
+# 3. The manual steps that cannot be scripted.
 cat <<'MANUAL'
 
 ============================================================

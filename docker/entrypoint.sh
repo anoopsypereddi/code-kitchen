@@ -2,12 +2,11 @@
 # code-kitchen container entrypoint (Phase 1).
 #
 # Runs once at container start, before the kitchen comes up:
-#   1. Start the no-mistakes daemon if a no-mistakes project is present.
-#   2. Configure git for HTTPS + token (credential helper reads $GH_TOKEN;
+#   1. Configure git for HTTPS + token (credential helper reads $GH_TOKEN;
 #      identity from $GIT_AUTHOR_NAME / $GIT_AUTHOR_EMAIL).
-#   3. cd into the mounted kitchen home.
-#   4. Run bin/sc-bootstrap.sh to confirm a clean detection.
-#   5. exec the given command (default: the harness under tmux).
+#   2. cd into the mounted kitchen home.
+#   3. Run bin/sc-bootstrap.sh to confirm a clean detection.
+#   4. exec the given command (default: the harness under tmux).
 #
 # Secrets arrive ONLY via env (--env-file); this script never reads or writes a
 # host gh/claude/ssh credential. With no GH_TOKEN set, bootstrap's NEEDS_GH_AUTH
@@ -20,36 +19,7 @@ HARNESS="${HARNESS:-claude}"
 
 log() { printf '[entrypoint] %s\n' "$1"; }
 
-# --- 1. no-mistakes daemon ------------------------------------------------
-# Start it only when a no-mistakes project is actually present: a project clone
-# carrying a `no-mistakes` git remote (added by `no-mistakes init`). A kitchen
-# with only direct-PR / local-only projects needs no daemon.
-start_no_mistakes_daemon() {
-  command -v no-mistakes >/dev/null 2>&1 || { log "no-mistakes not installed; skipping daemon"; return; }
-
-  local found=""
-  if [ -d "$KITCHEN_HOME/projects" ]; then
-    for cfg in "$KITCHEN_HOME"/projects/*/.git/config; do
-      [ -f "$cfg" ] || continue
-      if grep -q '\[remote "no-mistakes"\]' "$cfg" 2>/dev/null; then
-        found=1
-        break
-      fi
-    done
-  fi
-
-  if [ -z "$found" ]; then
-    log "no no-mistakes project present; daemon not started"
-    return
-  fi
-
-  log "no-mistakes project present; starting daemon"
-  # Best-effort: a daemon already running, or a transient start hiccup, must not
-  # abort container start. The brigade re-checks via `no-mistakes doctor`.
-  no-mistakes daemon start >/dev/null 2>&1 || log "warning: 'no-mistakes daemon start' returned non-zero (it may already be running)"
-}
-
-# --- 2. git over HTTPS + token -------------------------------------------
+# --- 1. git over HTTPS + token -------------------------------------------
 # Credential helper emits a token-backed credential for HTTPS GitHub pushes, so
 # no SSH key and no host gh config ever enter the container. The helper reads
 # $GH_TOKEN live at push time; if it is unset the helper emits nothing and git
@@ -77,7 +47,7 @@ configure_git() {
   fi
 }
 
-# --- 3 & 4. kitchen home + bootstrap -------------------------------------
+# --- 2 & 3. kitchen home + bootstrap -------------------------------------
 run_bootstrap() {
   if [ ! -d "$KITCHEN_HOME" ]; then
     log "kitchen home $KITCHEN_HOME not mounted yet; skipping bootstrap (mount it on 'up')"
@@ -94,11 +64,10 @@ run_bootstrap() {
   fi
 }
 
-start_no_mistakes_daemon
 configure_git
 run_bootstrap
 
-# --- 5. hand off ----------------------------------------------------------
+# --- 4. hand off ----------------------------------------------------------
 # With an explicit command (e.g. `sleep infinity` from sc-container.sh up, or a
 # one-off), exec it. With none, bring the Souschef up directly: the harness
 # inside a persistent tmux session, cwd at the kitchen home.

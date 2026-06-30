@@ -22,9 +22,8 @@
 # force-merged. Enqueuing counts as shipping. After either PR path, sc-pr-check's
 # state/<id>.check.sh keeps polling for the eventual MERGED state for teardown.
 #
-# Bare gh, not gh-axi, is intentional throughout (mirroring sc-pr-check.sh): the
-# detection and outcome reads need --json/-q and the enqueue needs `gh api graphql`,
-# neither of which gh-axi exposes.
+# All GitHub operations use the official gh CLI: the detection and outcome reads
+# need --json/-q and the enqueue needs `gh api graphql`.
 #
 # Usage: sc-ship.sh <task-id> [auto|queue|squash|local]
 set -eu

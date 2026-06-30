@@ -20,15 +20,15 @@
 #   (a) local-only + HEAD on a fork remote-tracking branch     -> ALLOW  (fork fix)
 #   (b) local-only + truly unpushed work (no remote, not main) -> REFUSE (safety)
 #   (c) local-only + merged into local main, no remote         -> ALLOW  (no regression)
-#   (d) no-mistakes + HEAD on origin remote-tracking branch    -> ALLOW  (no regression)
-#   (e) no-mistakes + unpushed, no PR, content not in default  -> REFUSE (safety)
+#   (d) direct-PR + HEAD on origin remote-tracking branch    -> ALLOW  (no regression)
+#   (e) direct-PR + unpushed, no PR, content not in default  -> REFUSE (safety)
 #   (f) local-only + truly unpushed + --force                  -> ALLOW  (escape hatch)
-#   (g) no-mistakes + squash-merged PR, branch-deleted         -> ALLOW  (squash fix)
-#   (h) no-mistakes + no PR but content already in default     -> ALLOW  (content fallback)
-#   (i) no-mistakes + dirty worktree, even when work landed     -> REFUSE (dirty wins)
-#   (j) no-mistakes + gh lookup errors + content not in default -> REFUSE (fail-safe)
-#   (k) no-mistakes + merged PR but HEAD moved afterward        -> REFUSE (stale PR)
-#   (l) no-mistakes + stale origin/main but fetched content     -> ALLOW  (fresh fetch)
+#   (g) direct-PR + squash-merged PR, branch-deleted         -> ALLOW  (squash fix)
+#   (h) direct-PR + no PR but content already in default     -> ALLOW  (content fallback)
+#   (i) direct-PR + dirty worktree, even when work landed     -> REFUSE (dirty wins)
+#   (j) direct-PR + gh lookup errors + content not in default -> REFUSE (fail-safe)
+#   (k) direct-PR + merged PR but HEAD moved afterward        -> REFUSE (stale PR)
+#   (l) direct-PR + stale origin/main but fetched content     -> ALLOW  (fresh fetch)
 #   (m) sc-pr-check rerun after HEAD moved                      -> no stale pr_head
 set -u
 
@@ -64,26 +64,20 @@ SH
 # tmux kill-window etc.: succeed silently.
 exit 0
 SH
-  # Default gh-axi mock: no PR is associated with the branch, and viewing any PR
-  # number fails. This keeps the landed-work check hermetic (never reaching the real
-  # gh-axi) and represents the common "no GitHub PR" baseline. Tests that need a
-  # merged PR or a lookup error override this file with the helpers below.
-  cat > "$fakebin/gh-axi" <<'SH'
-#!/usr/bin/env bash
-case "${1:-} ${2:-}" in
-  "pr list") printf '%s\n' "count: 0 (showing first 0)" "pull_requests[]: []" ; exit 0 ;;
-  "pr view") echo "error: pull request not found" >&2 ; exit 1 ;;
-esac
-exit 0
-SH
+  # Default gh mock: no PR is associated with the branch (pr list yields no
+  # number), and viewing any PR fails. This keeps the landed-work check hermetic
+  # (never reaching the real gh) and represents the common "no GitHub PR"
+  # baseline. Tests that need a merged PR or a lookup error override this file
+  # with the helpers below.
   cat > "$fakebin/gh" <<'SH'
 #!/usr/bin/env bash
 case "${1:-} ${2:-}" in
+  "pr list") exit 0 ;;
   "pr view") echo "error: pull request not found" >&2 ; exit 1 ;;
 esac
 exit 0
 SH
-  chmod +x "$fakebin/sc-worktree.sh" "$fakebin/tmux" "$fakebin/gh-axi" "$fakebin/gh"
+  chmod +x "$fakebin/sc-worktree.sh" "$fakebin/tmux" "$fakebin/gh"
 
   # Bare origin so the clone has an `origin` remote and origin/HEAD.
   git init -q --bare "$case_dir/origin.git"
@@ -104,18 +98,6 @@ SH
   touch "$case_dir/state/.last-watcher-beat"
 
   printf '%s\n' "$case_dir"
-}
-
-add_compatible_tasks_axi() {
-  local case_dir=$1
-  cat > "$case_dir/fakebin/tasks-axi" <<'SH'
-#!/usr/bin/env bash
-if [ "${1:-}" = --version ]; then
-  printf '%s\n' '0.1.1'
-fi
-exit 0
-SH
-  chmod +x "$case_dir/fakebin/tasks-axi"
 }
 
 # Write a meta file for the task. Args: case_dir mode kind
@@ -177,19 +159,10 @@ land_on_origin_main() {
 # Override GitHub lookups to report PR 7 as merged with the supplied head.
 add_gh_pr_merged_for_head() {
   local case_dir=$1 head=$2
-  cat > "$case_dir/fakebin/gh-axi" <<'SH'
-#!/usr/bin/env bash
-case "${1:-} ${2:-}" in
-  "pr list")
-    printf '%s\n' "count: 1 (showing first 1)" "pull_requests[1]{number,state}:" "  7,merged" ; exit 0 ;;
-  "pr view")
-    printf '%s\n' "pull_request:" "  number: 7" "  state: merged" '  merged: "2026-06-26T00:00:00Z"' ; exit 0 ;;
-esac
-exit 0
-SH
   cat > "$case_dir/fakebin/gh" <<SH
 #!/usr/bin/env bash
 case "\${1:-} \${2:-}" in
+  "pr list") printf '%s\n' '7' ; exit 0 ;;
   "pr view")
     case " \$* " in
       *"state,headRefOid"*) printf '%s\t%s\n' 'MERGED' '$head' ; exit 0 ;;
@@ -200,7 +173,7 @@ esac
 echo "error: pull request not found" >&2
 exit 1
 SH
-  chmod +x "$case_dir/fakebin/gh-axi" "$case_dir/fakebin/gh"
+  chmod +x "$case_dir/fakebin/gh"
 }
 
 append_pr_meta_for_current_head() {
@@ -211,20 +184,15 @@ append_pr_meta_for_current_head() {
     "pr_head=$head" >> "$case_dir/state/task-x1.meta"
 }
 
-# Override gh-axi so every call fails, simulating an API/network error.
-add_gh_axi_error() {
+# Override gh so every call fails, simulating an API/network error.
+add_gh_error() {
   local case_dir=$1
-  cat > "$case_dir/fakebin/gh-axi" <<'SH'
-#!/usr/bin/env bash
-echo "error: gh-axi unavailable" >&2
-exit 1
-SH
   cat > "$case_dir/fakebin/gh" <<'SH'
 #!/usr/bin/env bash
 echo "error: gh unavailable" >&2
 exit 1
 SH
-  chmod +x "$case_dir/fakebin/gh-axi" "$case_dir/fakebin/gh"
+  chmod +x "$case_dir/fakebin/gh"
 }
 
 # Run teardown with PATH mocking. Args: case_dir [extra args...]
@@ -254,23 +222,21 @@ test_local_only_fork_remote_allows() {
   pass "local-only worktree with HEAD on a fork remote is torn down (fix holds)"
 }
 
-test_teardown_prompts_tasks_axi_done_when_compatible() {
+test_teardown_prints_hand_edit_backlog_reminder() {
   local case_dir out
-  case_dir=$(make_case tasks-axi-reminder)
-  write_meta "$case_dir" no-mistakes ship
+  case_dir=$(make_case backlog-reminder)
+  write_meta "$case_dir" direct-PR ship
   printf '%s\n' 'pr=https://github.com/example/repo/pull/7' >> "$case_dir/state/task-x1.meta"
-  add_compatible_tasks_axi "$case_dir"
+  # Push the branch to origin so teardown's landed-work check passes cleanly.
+  git -C "$case_dir/wt" push -q origin fm/task-x1
+  git -C "$case_dir/project" fetch -q origin
 
-  out=$(run_teardown "$case_dir") || fail "teardown failed with compatible tasks-axi"
-  printf '%s\n' "$out" | grep -F 'tasks-axi done task-x1 --pr https://github.com/example/repo/pull/7' >/dev/null \
-    || fail "teardown did not prompt tasks-axi done: $out"
-  printf '%s\n' "$out" | grep -F 'tasks-axi ready' >/dev/null \
-    || fail "teardown did not prompt tasks-axi ready: $out"
-  printf '%s\n' "$out" | grep -F 'check date gates' >/dev/null \
-    || fail "teardown did not preserve date-gate check: $out"
+  out=$(run_teardown "$case_dir") || fail "teardown failed: $out"
+  printf '%s\n' "$out" | grep -F 'Update data/backlog.md' >/dev/null \
+    || fail "teardown did not print the hand-edit backlog reminder: $out"
   printf '%s\n' "$out" | grep -F 'keep Done to the 10 most recent' >/dev/null \
-    && fail "teardown kept manual Done pruning in compatible tasks-axi prompt: $out"
-  pass "teardown prompts tasks-axi backlog refresh when compatible"
+    || fail "teardown did not preserve the Done-keep-10 rule: $out"
+  pass "teardown prints the hand-edited backlog refresh reminder"
 }
 
 test_local_only_truly_unpushed_refuses() {
@@ -315,7 +281,7 @@ test_local_only_merged_to_local_main_allows() {
 test_no_mistakes_origin_remote_allows() {
   local case_dir rc
   case_dir=$(make_case nm-origin)
-  write_meta "$case_dir" no-mistakes ship
+  write_meta "$case_dir" direct-PR ship
   wt_commit "$case_dir" "shippable work"
   # Push the task branch to origin and fetch so the worktree sees it.
   git -C "$case_dir/wt" push -q origin fm/task-x1
@@ -330,14 +296,14 @@ test_no_mistakes_origin_remote_allows() {
   ! grep -q REFUSED "$case_dir/stderr" || fail "nm-origin: teardown printed a REFUSED line"
   grep -F 'blockers are gone and date is due' "$case_dir/stdout" >/dev/null \
     || fail "nm-origin: teardown manual prompt did not preserve date-gate check"
-  pass "no-mistakes worktree with HEAD on origin is torn down (no regression)"
+  pass "direct-PR worktree with HEAD on origin is torn down (no regression)"
 }
 
 test_no_mistakes_truly_unpushed_refuses() {
   local case_dir rc
   case_dir=$(make_case nm-unpushed)
-  write_meta "$case_dir" no-mistakes ship
-  # Real content that is not pushed, has no PR (default gh-axi mock), and never
+  write_meta "$case_dir" direct-PR ship
+  # Real content that is not pushed, has no PR (default gh mock), and never
   # landed on origin/main: genuinely unlanded work that must still refuse.
   wt_commit_file "$case_dir" feature.txt hello "unpushed work"
 
@@ -348,13 +314,13 @@ test_no_mistakes_truly_unpushed_refuses() {
 
   expect_code 1 "$rc" "nm-unpushed: teardown should refuse"
   grep -q REFUSED "$case_dir/stderr" || fail "nm-unpushed: no REFUSED line in stderr"
-  pass "no-mistakes worktree with genuinely unlanded work is refused (safety preserved)"
+  pass "direct-PR worktree with genuinely unlanded work is refused (safety preserved)"
 }
 
 test_squash_merged_branch_deleted_allows() {
   local case_dir rc pr_head
   case_dir=$(make_case squash-merged)
-  write_meta "$case_dir" no-mistakes ship
+  write_meta "$case_dir" direct-PR ship
   # Real branch content that is NOT pushed and NOT on origin/main: a squash merge
   # rewrote it into a different commit on main and auto-deleted the head branch, so
   # HEAD is unreachable from every remote-tracking branch. The matching merged PR is
@@ -377,7 +343,7 @@ test_squash_merged_branch_deleted_allows() {
 test_merged_pr_with_later_local_commit_refuses() {
   local case_dir rc pr_head
   case_dir=$(make_case stale-pr-head)
-  write_meta "$case_dir" no-mistakes ship
+  write_meta "$case_dir" direct-PR ship
   wt_commit_file "$case_dir" feature.txt hello "add feature"
   append_pr_meta_for_current_head "$case_dir"
   pr_head=$(git -C "$case_dir/wt" rev-parse HEAD)
@@ -397,7 +363,7 @@ test_merged_pr_with_later_local_commit_refuses() {
 test_pr_check_does_not_refresh_stale_pr_head() {
   local case_dir rc pr_head new_head count
   case_dir=$(make_case pr-check-stale)
-  write_meta "$case_dir" no-mistakes ship
+  write_meta "$case_dir" direct-PR ship
   wt_commit_file "$case_dir" feature.txt hello "add feature"
   pr_head=$(git -C "$case_dir/wt" rev-parse HEAD)
   add_gh_pr_merged_for_head "$case_dir" "$pr_head"
@@ -433,8 +399,8 @@ test_pr_check_does_not_refresh_stale_pr_head() {
 test_content_in_default_fallback_allows() {
   local case_dir rc
   case_dir=$(make_case content-landed)
-  write_meta "$case_dir" no-mistakes ship
-  # No pr= recorded and the default gh-axi mock reports no PR, so the merged-PR path
+  write_meta "$case_dir" direct-PR ship
+  # No pr= recorded and the default gh mock reports no PR, so the merged-PR path
   # cannot fire and the content check must carry it. The branch adds feature.txt, and
   # the same net change has independently landed on origin/main via a squash commit.
   wt_commit_file "$case_dir" feature.txt hello "add feature"
@@ -453,7 +419,7 @@ test_content_in_default_fallback_allows() {
 test_content_fallback_refreshes_stale_origin_ref() {
   local case_dir rc
   case_dir=$(make_case content-stale-ref)
-  write_meta "$case_dir" no-mistakes ship
+  write_meta "$case_dir" direct-PR ship
   wt_commit_file "$case_dir" feature.txt hello "add feature"
   git -C "$case_dir/project" config --unset-all remote.origin.fetch
   git -C "$case_dir/project" config --add remote.origin.fetch '+refs/heads/not-main:refs/remotes/origin/not-main'
@@ -472,7 +438,7 @@ test_content_fallback_refreshes_stale_origin_ref() {
 test_dirty_worktree_refuses() {
   local case_dir rc pr_head
   case_dir=$(make_case dirty-wt)
-  write_meta "$case_dir" no-mistakes ship
+  write_meta "$case_dir" direct-PR ship
   printf '%s\n' 'pr=https://github.com/example/repo/pull/7' >> "$case_dir/state/task-x1.meta"
   # The committed work has fully landed (merged PR + content in default), but an
   # uncommitted edit remains. Dirtiness must refuse regardless: the reset would
@@ -497,12 +463,12 @@ test_dirty_worktree_refuses() {
 test_gh_error_and_content_absent_refuses() {
   local case_dir rc
   case_dir=$(make_case gh-error)
-  write_meta "$case_dir" no-mistakes ship
+  write_meta "$case_dir" direct-PR ship
   printf '%s\n' 'pr=https://github.com/example/repo/pull/7' >> "$case_dir/state/task-x1.meta"
   # Real content not pushed, the PR lookup errors, and origin/main never gained the
   # content. The fail-safe must refuse rather than allow on a transient gh failure.
   wt_commit_file "$case_dir" feature.txt hello "add feature"
-  add_gh_axi_error "$case_dir"
+  add_gh_error "$case_dir"
 
   set +e
   run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
@@ -531,7 +497,7 @@ test_local_only_force_overrides_unpushed() {
 }
 
 test_local_only_fork_remote_allows
-test_teardown_prompts_tasks_axi_done_when_compatible
+test_teardown_prints_hand_edit_backlog_reminder
 test_local_only_truly_unpushed_refuses
 test_local_only_merged_to_local_main_allows
 test_no_mistakes_origin_remote_allows
