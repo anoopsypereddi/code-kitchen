@@ -73,8 +73,9 @@ RUN useradd -m -u "${KUID}" -s /bin/bash "${KUSER}" \
 USER ${KUSER}
 WORKDIR /home/${KUSER}
 
-# ~/.local/bin holds treehouse + no-mistakes (org installers); ~/.npm-global/bin
-# holds the npm globals + harness. Both must be on PATH (report §1.3).
+# ~/.local/bin holds no-mistakes (org installer); ~/.npm-global/bin holds the npm
+# globals + harness. Both must be on PATH (report §1.3). Worktrees are managed by
+# code-kitchen's own bin/sc-worktree.sh (git worktree) - no third-party tool.
 ENV NPM_CONFIG_PREFIX="/home/${KUSER}/.npm-global"
 ENV PATH="/home/${KUSER}/.local/bin:/home/${KUSER}/.npm-global/bin:${PATH}"
 RUN mkdir -p "/home/${KUSER}/.npm-global" "/home/${KUSER}/.local/bin"
@@ -100,18 +101,9 @@ RUN if [ "$HARNESS" = "claude" ]; then \
       echo "WARNING: HARNESS=$HARNESS has no install rule yet; install it in this layer once the adapter is verified." >&2; \
     fi
 
-# 7. Org installers (setup.sh:73): treehouse + no-mistakes, into ~/.local/bin.
-#    HARD build-time assertion: treehouse get --help MUST advertise --lease, or
-#    the brigade treats it as MISSING (sc-bootstrap.sh) and the kitchen cannot
-#    fire stations. Fail the build loudly rather than ship a broken image.
-RUN curl -fsSL https://kunchenguid.github.io/treehouse/install.sh | sh \
-    && curl -fsSL https://raw.githubusercontent.com/kunchenguid/no-mistakes/main/docs/install.sh | sh \
-    && if treehouse get --help 2>&1 | grep -Eq '(^|[^[:alnum:]_-])--lease([^[:alnum:]_-]|$)'; then \
-         echo "OK: treehouse advertises --lease"; \
-       else \
-         echo "BUILD FAILED: installed treehouse lacks 'treehouse get --lease'; the brigade requires it." >&2; \
-         exit 1; \
-       fi
+# 7. Org installer (setup.sh): no-mistakes, into ~/.local/bin. Worktrees need no
+#    third-party install - bin/sc-worktree.sh ships with the repo and rides git.
+RUN curl -fsSL https://raw.githubusercontent.com/kunchenguid/no-mistakes/main/docs/install.sh | sh
 
 # 8. Entrypoint: start the no-mistakes daemon when needed, configure git for
 #    HTTPS+token, cd into the mounted kitchen home, run bootstrap, exec the
@@ -119,10 +111,11 @@ RUN curl -fsSL https://kunchenguid.github.io/treehouse/install.sh | sh \
 COPY --chown=${KUSER}:${KUSER} docker/entrypoint.sh /home/${KUSER}/entrypoint.sh
 RUN chmod +x /home/${KUSER}/entrypoint.sh
 
-# Where the kitchen home volume mounts. The treehouse pool and no-mistakes store
-# live at ~/.treehouse and ~/.no-mistakes (their default, fixed paths) on their
-# own named volumes; treehouse builds the pool FRESH inside (report §2.4).
+# Where the kitchen home volume mounts. The git worktree pool and no-mistakes
+# store live at ~/.sc-worktrees and ~/.no-mistakes on their own named volumes;
+# sc-container.sh sets SC_WORKTREE_ROOT and builds the pool FRESH inside (report §2.4).
 ENV SC_KITCHEN_HOME=/home/${KUSER}/kitchen
+ENV SC_WORKTREE_ROOT=/home/${KUSER}/.sc-worktrees
 ENV HARNESS=${HARNESS}
 
 ENTRYPOINT ["/home/chef/entrypoint.sh"]

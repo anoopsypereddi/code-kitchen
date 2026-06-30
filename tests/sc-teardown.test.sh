@@ -2,7 +2,7 @@
 # Tests for bin/sc-teardown.sh's landed-work safety check.
 #
 # The check refuses to tear down a worktree whose work has not LANDED, because
-# treehouse return hard-resets the worktree. "Landed" means reachable from a remote
+# the worktree return hard-resets the worktree. "Landed" means reachable from a remote
 # OR - for a normal ship task whose commits are not so reachable - its PR is merged
 # and GitHub reports the current HEAD as that PR's head, or its content is already
 # in the up-to-date default branch.
@@ -41,7 +41,7 @@ TMP_ROOT=$(sc_test_tmproot sc-teardown-tests)
 
 # Build a fresh sandbox for one test case. Sets up:
 #   $CASE/state/        - souschef state dir (with a fresh watcher beacon)
-#   $CASE/fakebin/      - mocks for treehouse, tmux (PATH-prepended by caller)
+#   $CASE/fakebin/      - mocks for sc-worktree.sh, tmux (PATH-prepended by caller)
 #   $CASE/origin.git/   - bare upstream repo (so the project clone has origin)
 #   $CASE/project/      - clone of origin; acts as the souschef project dir
 #   $CASE/wt/           - a worktree of the project (the task worktree)
@@ -54,9 +54,9 @@ make_case() {
 
   # Mocks for the post-check teardown steps. Refuse logic exits before these
   # run; the ALLOW cases need them so the script can complete cleanly.
-  cat > "$fakebin/treehouse" <<'SH'
+  cat > "$fakebin/sc-worktree.sh" <<'SH'
 #!/usr/bin/env bash
-# `treehouse return --force <wt>`: succeed silently.
+# `sc-worktree.sh return --force <wt>`: succeed silently.
 exit 0
 SH
   cat > "$fakebin/tmux" <<'SH'
@@ -83,7 +83,7 @@ case "${1:-} ${2:-}" in
 esac
 exit 0
 SH
-  chmod +x "$fakebin/treehouse" "$fakebin/tmux" "$fakebin/gh-axi" "$fakebin/gh"
+  chmod +x "$fakebin/sc-worktree.sh" "$fakebin/tmux" "$fakebin/gh-axi" "$fakebin/gh"
 
   # Bare origin so the clone has an `origin` remote and origin/HEAD.
   git init -q --bare "$case_dir/origin.git"
@@ -232,6 +232,7 @@ run_teardown() {
   local case_dir=$1; shift
   SC_ROOT_OVERRIDE="$ROOT" \
   SC_STATE_OVERRIDE="$case_dir/state" \
+  SC_WORKTREE_BIN="$case_dir/fakebin/sc-worktree.sh" \
   PATH="$case_dir/fakebin:$PATH" \
     "$TEARDOWN" task-x1 "$@"
 }

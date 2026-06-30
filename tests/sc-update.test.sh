@@ -59,7 +59,7 @@ new_world() {
 }
 
 # Add a secondmate home as a DETACHED worktree of the souschef repo (matching
-# how treehouse leases a secondmate home), plus its state meta. Args: world id.
+# how sc-worktree.sh leases a secondmate home), plus its state meta. Args: world id.
 add_sm() {
   local w=$1 id=$2
   git -C "$w/main" worktree add -q --detach "$w/$id" main

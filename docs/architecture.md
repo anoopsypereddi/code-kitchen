@@ -25,8 +25,8 @@ Its injection path shares `bin/sc-tmux-lib.sh` with `sc-send.sh`, so dim-ghost-a
 
 ## Worktrees, not branches in your checkout
 
-Cooks never intentionally touch your project clone; [treehouse](https://github.com/kunchenguid/treehouse) pools clean worktrees so parallel tickets on one repo cannot collide.
-For service and prep work, `sc-spawn.sh` waits for `treehouse get` and then refuses to launch unless the pane resolves to a real git worktree root that is distinct from the project primary checkout.
+Cooks never intentionally touch your project clone; code-kitchen's own `bin/sc-worktree.sh` carves clean git worktrees so parallel tickets on one repo cannot collide.
+For service and prep work, `sc-spawn.sh` carves the worktree with `sc-worktree.sh get --lease` (which returns the path deterministically) and refuses to launch unless that path is a real git worktree root distinct from the project primary checkout.
 
 The Souschef repo has one extra exposure because it can dispatch cooks to work on itself.
 Its operating checkout (`SC_ROOT`) and the disposable cook worktrees are all linked git worktrees of the same repository, so the valid discriminator is branch state, not whether the checkout is linked.
@@ -45,7 +45,7 @@ Service tickets change projects and deliver by project mode (`no-mistakes`, `dir
 
 `data/secondmates.md` records persistent domain expediters with natural-language scopes, project clone lists, and home paths.
 `sc-home-seed.sh` provisions the isolated home, clones the listed PR-based projects into it, initializes newly cloned `no-mistakes` projects, copies the charter to `data/charter.md`, and `sc-spawn.sh --secondmate` launches it through the same tmux and status-file path as any direct report.
-When seeded with `-`, the home is a durable treehouse lease under the station chef id, so it survives with no live process and is not recycled by later `treehouse get` or pruning.
+When seeded with `-`, the home is a durable `sc-worktree.sh` lease under the station chef id, so it survives with no live process and is never recycled by pruning until it is returned.
 Retirement or seed rollback returns the leased home; normal restart/recovery keeps it leased.
 If returning the lease fails during 86, Souschef leaves the route and home intact instead of hiding a still-held lease.
 Seeding is transactional: if validation, cloning, initialization, or registry update fails, generated briefs, new homes, new project clones, and registry edits are rolled back.

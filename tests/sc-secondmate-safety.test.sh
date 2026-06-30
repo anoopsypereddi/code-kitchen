@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # tests/sc-secondmate-safety.test.sh - secondmate home safety invariants:
 # the path-boundary matrices (seed/spawn/teardown), registry/charter/origin
-# validation, treehouse lease handling, no-mistakes initialization of new
+# validation, worktree lease handling, no-mistakes initialization of new
 # clones, child-worktree protection, and backlog-handoff safety. The happy-path
 # operator flow lives in sc-secondmate-lifecycle-e2e.test.sh; this file keeps the
 # destructive-invariant coverage that an e2e run cannot deterministically reach.
@@ -178,15 +178,15 @@ test_home_seed_uses_treehouse_acquired_home() {
   log="$TMP_ROOT/dash-fake/tmux.log"
   lease="$TMP_ROOT/dash-fake/lease"
 
-  out=$(PATH="$fakebin:$PATH" SC_HOME="$home" SC_FAKE_TREEHOUSE_HOME="$acquired" SC_FAKE_TMUX_LOG="$log" \
+  out=$(SC_WORKTREE_BIN="$fakebin/sc-worktree.sh" PATH="$fakebin:$PATH" SC_HOME="$home" SC_FAKE_TREEHOUSE_HOME="$acquired" SC_FAKE_TMUX_LOG="$log" \
     SC_FAKE_TREEHOUSE_LEASE_FILE="$lease" \
     SC_SECONDMATE_CHARTER='dash acquired scope' SC_SECONDMATE_SCOPE='dash acquired scope' \
     "$ROOT/bin/sc-home-seed.sh" dash - alpha) \
     || fail "seed failed for a treehouse-acquired home"
   acquired_abs=$(cd "$acquired" && pwd -P)
   printf '%s\n' "$out" | grep -F "home=$acquired_abs" >/dev/null || fail "seed did not report acquired home"
-  grep -F 'treehouse get --lease --lease-holder dash' "$log" >/dev/null || fail "seed did not durably lease a home under the secondmate id"
-  [ -f "$lease" ] || fail "seed did not record a treehouse lease"
+  grep -F 'sc-worktree get --lease --lease-holder dash' "$log" >/dev/null || fail "seed did not durably lease a home under the secondmate id"
+  [ -f "$lease" ] || fail "seed did not record a worktree lease"
   [ "$(cat "$lease")" = dash ] || fail "seed did not set the lease holder to the secondmate id"
   [ -f "$acquired/.sc-secondmate-home" ] || fail "seed did not mark acquired home"
   [ "$(cat "$acquired/.sc-secondmate-home")" = dash ] || fail "seed wrote wrong acquired-home marker"
@@ -210,18 +210,18 @@ test_home_seed_returns_treehouse_acquired_home_on_assignment_failure() {
   fakebin=$(make_fake_tmux "$TMP_ROOT/dash-fail-fake")
   log="$TMP_ROOT/dash-fail-fake/tmux.log"
 
-  if PATH="$fakebin:$PATH" SC_HOME="$home" SC_FAKE_TREEHOUSE_HOME="$acquired" SC_FAKE_TMUX_LOG="$log" \
+  if SC_WORKTREE_BIN="$fakebin/sc-worktree.sh" PATH="$fakebin:$PATH" SC_HOME="$home" SC_FAKE_TREEHOUSE_HOME="$acquired" SC_FAKE_TMUX_LOG="$log" \
     SC_SECONDMATE_CHARTER='dash acquired scope' SC_SECONDMATE_SCOPE='dash acquired scope' \
     "$ROOT/bin/sc-home-seed.sh" dash - alpha >/dev/null 2>"$err"; then
     fail "seed reused an acquired home marked for another secondmate"
   fi
   grep -F 'already marked for other' "$err" >/dev/null || fail "seed did not explain acquired marked-home rejection"
-  grep -F "treehouse return --force $acquired_abs" "$log" >/dev/null \
-    || fail "failed acquired seed did not return the home through treehouse"
+  grep -F "sc-worktree return --force $acquired_abs" "$log" >/dev/null \
+    || fail "failed acquired seed did not return the home through sc-worktree"
   if [ -f "$home/data/secondmates.md" ] && grep -F -- '- dash ' "$home/data/secondmates.md" >/dev/null; then
     fail "failed acquired seed left a registry route"
   fi
-  pass "home seeding returns rejected acquired homes through treehouse"
+  pass "home seeding returns rejected acquired homes through sc-worktree"
 }
 
 test_home_seed_warns_when_acquired_home_return_fails() {
@@ -240,17 +240,17 @@ test_home_seed_warns_when_acquired_home_return_fails() {
   log="$TMP_ROOT/dash-return-fail-fake/tmux.log"
   lease="$TMP_ROOT/dash-return-fail-fake/lease"
 
-  if PATH="$fakebin:$PATH" SC_HOME="$home" SC_FAKE_TREEHOUSE_HOME="$acquired" SC_FAKE_TMUX_LOG="$log" \
+  if SC_WORKTREE_BIN="$fakebin/sc-worktree.sh" PATH="$fakebin:$PATH" SC_HOME="$home" SC_FAKE_TREEHOUSE_HOME="$acquired" SC_FAKE_TMUX_LOG="$log" \
     SC_FAKE_TREEHOUSE_LEASE_FILE="$lease" SC_FAKE_TREEHOUSE_RETURN_FAIL=1 \
     SC_SECONDMATE_CHARTER='dash acquired scope' SC_SECONDMATE_SCOPE='dash acquired scope' \
     "$ROOT/bin/sc-home-seed.sh" dash - alpha >/dev/null 2>"$err"; then
     fail "seed reused an acquired home after return failure setup"
   fi
   grep -F 'already marked for other' "$err" >/dev/null || fail "seed did not report original acquired-home rejection"
-  grep -F "warning: failed to return treehouse-acquired home $acquired_abs during seed rollback" "$err" >/dev/null \
-    || fail "seed rollback did not warn when treehouse return failed"
+  grep -F "warning: failed to return leased home $acquired_abs during seed rollback" "$err" >/dev/null \
+    || fail "seed rollback did not warn when sc-worktree return failed"
   [ -f "$lease" ] || fail "failed rollback return did not preserve lease evidence"
-  grep -F "treehouse return --force $acquired_abs" "$log" >/dev/null \
+  grep -F "sc-worktree return --force $acquired_abs" "$log" >/dev/null \
     || fail "failed rollback did not attempt to return the acquired home"
   pass "home seed rollback warns when treehouse-acquired return fails"
 }
@@ -267,25 +267,25 @@ test_home_seed_does_not_return_unsafe_acquired_home() {
   fakebin=$(make_fake_tmux "$TMP_ROOT/dash-active-fake")
   log="$TMP_ROOT/dash-active-fake/tmux.log"
 
-  if PATH="$fakebin:$PATH" SC_HOME="$home" SC_FAKE_TREEHOUSE_HOME="$home" SC_FAKE_TMUX_LOG="$log" \
+  if SC_WORKTREE_BIN="$fakebin/sc-worktree.sh" PATH="$fakebin:$PATH" SC_HOME="$home" SC_FAKE_TREEHOUSE_HOME="$home" SC_FAKE_TMUX_LOG="$log" \
     "$ROOT/bin/sc-home-seed.sh" dash - alpha >/dev/null 2>"$err"; then
     fail "seed accepted an acquired home matching the active souschef home"
   fi
   grep -F 'secondmate home cannot be the active souschef home' "$err" >/dev/null \
     || fail "seed did not explain active acquired-home rejection"
-  grep -F "treehouse return --force" "$log" >/dev/null \
-    && fail "seed returned an unsafe acquired active home through treehouse"
+  grep -F "sc-worktree return --force" "$log" >/dev/null \
+    && fail "seed returned an unsafe acquired active home through sc-worktree"
   [ -d "$home/projects/alpha" ] || fail "unsafe acquired-home rollback removed the active home"
 
   : > "$log"
-  if PATH="$fakebin:$PATH" SC_HOME="$home" SC_FAKE_TREEHOUSE_HOME="$descendant" SC_FAKE_TMUX_LOG="$log" \
+  if SC_WORKTREE_BIN="$fakebin/sc-worktree.sh" PATH="$fakebin:$PATH" SC_HOME="$home" SC_FAKE_TREEHOUSE_HOME="$descendant" SC_FAKE_TMUX_LOG="$log" \
     "$ROOT/bin/sc-home-seed.sh" dash - alpha >/dev/null 2>"$err"; then
     fail "seed accepted an acquired home inside the active souschef home"
   fi
   grep -F 'secondmate home cannot be inside the active souschef home' "$err" >/dev/null \
     || fail "seed did not explain active descendant acquired-home rejection"
-  grep -F "treehouse return --force" "$log" >/dev/null \
-    && fail "seed returned an unsafe acquired active descendant through treehouse"
+  grep -F "sc-worktree return --force" "$log" >/dev/null \
+    && fail "seed returned an unsafe acquired active descendant through sc-worktree"
   [ -d "$descendant" ] || fail "unsafe acquired-home rollback removed the active descendant"
   pass "home seeding leaves unsafe acquired active homes untouched"
 }
@@ -1014,11 +1014,11 @@ EOF
   log="$TMP_ROOT/teardown-fake/tmux.log"
   lease="$TMP_ROOT/teardown-fake/lease"
   printf 'domain\n' > "$lease"
-  PATH="$fakebin:$PATH" SC_ROOT_OVERRIDE="$fmroot" SC_HOME="$home" SC_FAKE_TMUX_LOG="$log" SC_FAKE_TMUX_CAPTURE="$TMP_ROOT/teardown-fake/pane.txt" \
+  PATH="$fakebin:$PATH" SC_WORKTREE_BIN="$fakebin/sc-worktree.sh" SC_ROOT_OVERRIDE="$fmroot" SC_HOME="$home" SC_FAKE_TMUX_LOG="$log" SC_FAKE_TMUX_CAPTURE="$TMP_ROOT/teardown-fake/pane.txt" \
     SC_FAKE_TREEHOUSE_LEASE_FILE="$lease" \
     "$ROOT/bin/sc-teardown.sh" domain >/dev/null 2>/dev/null \
     || fail "teardown failed for empty secondmate home"
-  grep -F "treehouse return --force $subhome_abs" "$log" >/dev/null || fail "teardown did not release the secondmate home lease via treehouse return"
+  grep -F "sc-worktree return --force $subhome_abs" "$log" >/dev/null || fail "teardown did not release the secondmate home lease via sc-worktree return"
   [ ! -e "$lease" ] || fail "teardown left the secondmate home lease held after retirement"
   [ ! -d "$subhome" ] || fail "teardown did not remove the retired secondmate home"
   [ ! -e "$home/state/domain.meta" ] || fail "teardown did not clear parent meta"
@@ -1053,15 +1053,15 @@ EOF
   log="$TMP_ROOT/teardown-return-fail-fake/tmux.log"
 
   set +e
-  PATH="$fakebin:$PATH" SC_ROOT_OVERRIDE="$fmroot" SC_HOME="$home" SC_FAKE_TMUX_LOG="$log" SC_FAKE_TMUX_CAPTURE="$TMP_ROOT/teardown-return-fail-fake/pane.txt" \
+  PATH="$fakebin:$PATH" SC_WORKTREE_BIN="$fakebin/sc-worktree.sh" SC_ROOT_OVERRIDE="$fmroot" SC_HOME="$home" SC_FAKE_TMUX_LOG="$log" SC_FAKE_TMUX_CAPTURE="$TMP_ROOT/teardown-return-fail-fake/pane.txt" \
     SC_FAKE_TREEHOUSE_RETURN_FAIL=1 \
     "$ROOT/bin/sc-teardown.sh" domain >/dev/null 2>"$err"
   rc=$?
   set -e
 
-  [ "$rc" -ne 0 ] || fail "teardown succeeded despite failed treehouse return"
-  grep -F "treehouse return --force $subhome_abs" "$log" >/dev/null || fail "teardown did not try to return the leased home"
-  grep -F 'treehouse return failed for secondmate home' "$err" >/dev/null || fail "teardown did not report failed leased home return"
+  [ "$rc" -ne 0 ] || fail "teardown succeeded despite failed worktree return"
+  grep -F "sc-worktree return --force $subhome_abs" "$log" >/dev/null || fail "teardown did not try to return the leased home"
+  grep -F 'sc-worktree return failed for secondmate home' "$err" >/dev/null || fail "teardown did not report failed leased home return"
   [ -d "$subhome" ] || fail "teardown removed a leased home after return failed"
   [ -e "$home/state/domain.meta" ] || fail "teardown cleared meta after leased home return failed"
   grep -F -- '- domain ' "$home/data/secondmates.md" >/dev/null || fail "teardown removed registry route after leased home return failed"
@@ -1091,11 +1091,11 @@ EOF
   fakebin=$(make_fake_tmux "$TMP_ROOT/plain-clone-teardown-fake")
   log="$TMP_ROOT/plain-clone-teardown-fake/tmux.log"
 
-  PATH="$fakebin:$PATH" SC_HOME="$home" SC_FAKE_TMUX_LOG="$log" SC_FAKE_TMUX_CAPTURE="$TMP_ROOT/plain-clone-teardown-fake/pane.txt" \
+  PATH="$fakebin:$PATH" SC_WORKTREE_BIN="$fakebin/sc-worktree.sh" SC_HOME="$home" SC_FAKE_TMUX_LOG="$log" SC_FAKE_TMUX_CAPTURE="$TMP_ROOT/plain-clone-teardown-fake/pane.txt" \
     SC_FAKE_TREEHOUSE_RETURN_FAIL=1 \
     "$ROOT/bin/sc-teardown.sh" domain >/dev/null 2>/dev/null \
     || fail "teardown failed for plain-clone secondmate home"
-  grep -F "treehouse return --force $subhome_abs" "$log" >/dev/null && fail "teardown tried to return a plain-clone home through treehouse"
+  grep -F "sc-worktree return --force $subhome_abs" "$log" >/dev/null && fail "teardown tried to return a plain-clone home through sc-worktree"
   [ ! -d "$subhome" ] || fail "teardown did not remove the plain-clone secondmate home"
   [ ! -e "$home/state/domain.meta" ] || fail "teardown did not clear parent meta for plain-clone home"
   grep -F -- '- domain ' "$home/data/secondmates.md" >/dev/null && fail "teardown did not remove plain-clone registry route"
@@ -1134,11 +1134,11 @@ yolo=off
 EOF
   fakebin=$(make_fake_tmux "$TMP_ROOT/force-teardown-fake")
   log="$TMP_ROOT/force-teardown-fake/tmux.log"
-  if PATH="$fakebin:$PATH" SC_HOME="$home" SC_FAKE_TMUX_LOG="$log" SC_FAKE_TMUX_CAPTURE="$TMP_ROOT/force-teardown-fake/pane.txt" \
+  if PATH="$fakebin:$PATH" SC_WORKTREE_BIN="$fakebin/sc-worktree.sh" SC_HOME="$home" SC_FAKE_TMUX_LOG="$log" SC_FAKE_TMUX_CAPTURE="$TMP_ROOT/force-teardown-fake/pane.txt" \
     "$ROOT/bin/sc-teardown.sh" domain >/dev/null 2>&1; then
     fail "teardown allowed a secondmate with in-flight child work"
   fi
-  PATH="$fakebin:$PATH" SC_HOME="$home" SC_FAKE_TMUX_LOG="$log" SC_FAKE_TMUX_CAPTURE="$TMP_ROOT/force-teardown-fake/pane.txt" \
+  PATH="$fakebin:$PATH" SC_WORKTREE_BIN="$fakebin/sc-worktree.sh" SC_HOME="$home" SC_FAKE_TMUX_LOG="$log" SC_FAKE_TMUX_CAPTURE="$TMP_ROOT/force-teardown-fake/pane.txt" \
     "$ROOT/bin/sc-teardown.sh" domain --force >/dev/null 2>/dev/null \
     || fail "force teardown failed to discard child work"
   [ ! -d "$subhome" ] || fail "force teardown did not remove the retired secondmate home"

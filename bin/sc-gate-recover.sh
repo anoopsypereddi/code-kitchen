@@ -2,7 +2,7 @@
 # sc-gate-recover.sh — self-heal the no-mistakes gate when it wedges with
 # "no previous run for branch".
 #
-# Root cause: when a crewmate validates from an isolated treehouse worktree,
+# Root cause: when a crewmate validates from an isolated git worktree,
 # no-mistakes resolves the repo from the PRIMARY checkout (which is on a
 # different branch) while the crewmate's branch lives in a linked worktree, and
 # a same-ref re-push is a git no-op - so the gate's post-receive hook never

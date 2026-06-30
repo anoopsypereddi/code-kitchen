@@ -18,8 +18,8 @@
 #          A TANGLE line means the souschef primary checkout (SC_ROOT) is stranded
 #          on a feature branch instead of its default branch - a crewmate's work
 #          landed in the primary instead of its own worktree; restore it per the line.
-#          treehouse is also MISSING when its installed version lacks
-#          "treehouse get --lease" support.
+#          Worktrees are managed by code-kitchen's own bin/sc-worktree.sh (built on
+#          git worktree), so there is no third-party worktree tool to probe.
 #          tasks-axi is an OPTIONAL backlog-management capability reported only
 #          when tasks-axi --version is 0.1.1 or newer. It is never a MISSING
 #          line and never prompts an install.
@@ -155,18 +155,13 @@ install_cmd() {
       else
         echo "install $1 manually (no supported package manager detected)"
       fi ;;
-    treehouse) echo "curl -fsSL https://kunchenguid.github.io/treehouse/install.sh | sh" ;;
     no-mistakes) echo "curl -fsSL https://raw.githubusercontent.com/kunchenguid/no-mistakes/main/docs/install.sh | sh" ;;
     gh-axi|chrome-devtools-axi|lavish-axi) echo "npm install -g $1 && $1 setup hooks" ;;
     *) return 1 ;;
   esac
 }
 
-TOOLS="tmux node npm gh git curl treehouse no-mistakes gh-axi chrome-devtools-axi lavish-axi"
-
-treehouse_supports_lease() {
-  treehouse get --help 2>&1 | grep -Eq '(^|[^[:alnum:]_-])--lease([^[:alnum:]_-]|$)'
-}
+TOOLS="tmux node npm gh git curl no-mistakes gh-axi chrome-devtools-axi lavish-axi"
 
 if [ "${1:-}" = "install" ]; then
   shift
@@ -186,9 +181,6 @@ fi
 for t in $TOOLS; do
   command -v "$t" >/dev/null || echo "MISSING: $t (install: $(install_cmd "$t"))"
 done
-if command -v treehouse >/dev/null 2>&1 && ! treehouse_supports_lease; then
-  echo "MISSING: treehouse (install: $(install_cmd treehouse))"
-fi
 gh auth status >/dev/null 2>&1 || echo "NEEDS_GH_AUTH"
 # Worktree-tangle check: the souschef primary checkout (SC_ROOT) must sit on its
 # default branch, not a feature branch (see sc-tangle-lib.sh). Scoped to the
