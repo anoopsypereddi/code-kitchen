@@ -362,12 +362,19 @@ Use plain chat for yes/no decisions and a short markdown summary when there are 
 
 For `direct-PR` tickets the cook reports `done: PR <url>` after it has validated locally and opened the PR.
 Run `bin/sc-pr-check.sh <id> <PR url>` - it records `pr=` and a verified `pr_head=` when available in the ticket's meta and arms the pass's merge poll.
+That merge poll now auto-86s the ticket: on a confirmed `MERGED` it runs `bin/sc-teardown.sh <id>` itself (a merged PR is landed, so the landed-work gate passes untouched) and then wakes Souschef with `merged: auto-cleaned <id> - <url>`, so by the time Souschef sees the merge the worktree, window, and state are already reclaimed and Souschef's only job on that wake is backlog reconciliation (Service 86 below).
 Tell the Chef: the PR's full URL (always the complete `https://...` link, never a bare `#number` - the Chef's terminal makes a full URL clickable) and a one-paragraph summary.
-(The check contract, for any custom `state/<id>.check.sh` you write yourself: print one line only when Souschef should wake, print nothing otherwise, and finish before `SC_CHECK_TIMEOUT`.)
+(The check contract, for any custom `state/<id>.check.sh` you write yourself: print one line only when Souschef should wake, print nothing otherwise, and finish before `SC_CHECK_TIMEOUT`. The generated merge poll folds a synchronous teardown into that budget - teardown's own `sc-fleet-sync` refresh is best-effort and runs last, so even a timeout there leaves a complete teardown, only the clone prune deferred to the next sync.)
 
 If the Chef says "merge it", run `bin/sc-ship.sh <id>` yourself; that instruction is the explicit approval, and the helper picks the project's correct merge mechanism (squash, merge-queue enqueue, or local fast-forward). If `yolo=on`, ship a green/approved PR with `bin/sc-ship.sh <id>` yourself and post the required FYI.
 
-### Service 86 (only after merge is confirmed)
+### Service 86 (automatic on confirmed merge)
+
+For a `direct-PR` ticket armed with `sc-pr-check`, 86 is now automatic: the merge poll runs `bin/sc-teardown.sh <id>` the instant it confirms the PR is `MERGED`, then wakes you with `merged: auto-cleaned <id> - <url>`.
+So on that wake you do not run teardown by hand - the worktree, window, and state are already reclaimed.
+Your remaining job is backlog reconciliation: move the ticket to Done in `data/backlog.md` with the full `https://...` PR URL (it is in the wake line) and date, keep Done to the 10 most recent, then re-evaluate the queue and fire only queued work whose blockers are gone and whose time/date gate, if any, has arrived.
+If the wake instead says `auto-cleanup failed`, teardown refused (which should not happen on a merged PR) - investigate and run `bin/sc-teardown.sh <id>` by hand.
+Run teardown by hand only for the cases the poll does not cover: a `local-only` merge, a prep 86, a station chef retirement, or a ticket that was never armed with `sc-pr-check`.
 
 ```sh
 bin/sc-teardown.sh <id>
