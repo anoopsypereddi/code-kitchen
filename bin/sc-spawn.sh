@@ -539,6 +539,11 @@ if [ "$KIND" = secondmate ]; then
   sq_home=$(shell_quote "$PROJ_ABS")
   LAUNCH="SC_ROOT_OVERRIDE= SC_STATE_OVERRIDE= SC_DATA_OVERRIDE= SC_PROJECTS_OVERRIDE= SC_CONFIG_OVERRIDE= SC_HOME=$sq_home $LAUNCH"
 fi
+# Guarantee the launch cwd atomically. The earlier `cd "$WT"` keystroke can be lost
+# to a slow shell startup (oh-my-zsh and friends), leaving the pane in the primary
+# checkout so the agent launches there and its isolation check refuses. Prepend the
+# cd to the launch command itself so both run as one keystroke once the shell is idle.
+LAUNCH="cd $(shell_quote "$WT") && $LAUNCH"
 tmux send-keys -t "$T" -l "$LAUNCH"
 sleep 0.3
 tmux send-keys -t "$T" Enter
