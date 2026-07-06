@@ -38,9 +38,33 @@ if [ -f "$META" ]; then
   fi
 fi
 
+# Environment baked into the check so sc-teardown.sh resolves the SAME home,
+# state, and data dirs as this souschef when the watcher fires the poll -
+# independent of whatever environment the watcher process was launched with.
+TEARDOWN_BIN=$(printf '%q' "$SCRIPT_DIR/sc-teardown.sh")
+TEARDOWN_ENV="SC_HOME=$(printf '%q' "$SC_HOME")"
+[ -n "${SC_STATE_OVERRIDE:-}" ] && TEARDOWN_ENV="$TEARDOWN_ENV SC_STATE_OVERRIDE=$(printf '%q' "$SC_STATE_OVERRIDE")"
+[ -n "${SC_DATA_OVERRIDE:-}" ]  && TEARDOWN_ENV="$TEARDOWN_ENV SC_DATA_OVERRIDE=$(printf '%q' "$SC_DATA_OVERRIDE")"
+[ -n "${SC_ROOT_OVERRIDE:-}" ]  && TEARDOWN_ENV="$TEARDOWN_ENV SC_ROOT_OVERRIDE=$(printf '%q' "$SC_ROOT_OVERRIDE")"
+
 cat > "$STATE/$ID.check.sh" <<EOF
 # Machine read of the PR state by URL; keeps the merge poll a clean MERGED check.
+# On a confirmed MERGED, auto-86 the task (return worktree, kill window, clear
+# state) via sc-teardown.sh - a merged PR IS landed, so teardown's landed-work
+# gate passes untouched - THEN emit a wake line so souschef only has to reconcile
+# the backlog. Teardown removes this check.sh and the ticket meta, so the pass
+# will not re-poll a torn-down task; a second run is a safe no-op because the glob
+# no longer matches. If teardown ever fails (it should not on a merged PR), the
+# check keeps waking with an actionable line rather than silently stranding the
+# merged task's workspace. No cd into the worktree here: teardown runs from the
+# watcher's cwd and removes the worktree it never entered.
 state=\$(gh pr view "$URL" --json state -q .state 2>/dev/null)
-[ "\$state" = "MERGED" ] && echo "merged"
+if [ "\$state" = "MERGED" ]; then
+  if $TEARDOWN_ENV $TEARDOWN_BIN "$ID" >/dev/null 2>&1; then
+    echo "merged: auto-cleaned $ID - $URL"
+  else
+    echo "merged: $ID PR merged but auto-cleanup failed - run bin/sc-teardown.sh $ID ($URL)"
+  fi
+fi
 EOF
-echo "armed: state/$ID.check.sh polls $URL"
+echo "armed: state/$ID.check.sh polls $URL (auto-teardown on merge)"
