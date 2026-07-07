@@ -262,7 +262,7 @@ sc_backend_herdr_pane_agent_state() {  # <session> <pane_id>
   out=$(sc_backend_herdr_cli "$session" pane get "$pane_id" 2>&1)
   code=$(printf '%s' "$out" | jq -r '.error.code // empty' 2>/dev/null)
   if [ -n "$code" ]; then
-    [ "$code" = "pane_not_found" ] && printf 'dead' || printf 'unknown'
+    if [ "$code" = "pane_not_found" ]; then printf 'dead'; else printf 'unknown'; fi
     return 0
   fi
   pid=$(printf '%s' "$out" | jq -r '.result.pane.pane_id // empty' 2>/dev/null)
@@ -273,7 +273,7 @@ sc_backend_herdr_pane_agent_state() {  # <session> <pane_id>
   out=$(sc_backend_herdr_cli "$session" agent get "$pane_id" 2>&1)
   code=$(printf '%s' "$out" | jq -r '.error.code // empty' 2>/dev/null)
   if [ -n "$code" ]; then
-    [ "$code" = "agent_not_found" ] && printf 'no-agent' || printf 'unknown'
+    if [ "$code" = "agent_not_found" ]; then printf 'no-agent'; else printf 'unknown'; fi
     return 0
   fi
   status=$(printf '%s' "$out" | jq -r '.result.agent.agent_status // empty' 2>/dev/null)

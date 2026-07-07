@@ -170,9 +170,10 @@ sc_backend_meta_for_window() {  # <target> <state-dir>
   for meta in "$state"/*.meta; do
     [ -e "$meta" ] || continue
     window=$(sc_meta_get "$meta" window)
-    [ -n "$window" ] && [ "$window" = "$target" ] || continue
-    printf '%s' "$meta"
-    return 0
+    if [ -n "$window" ] && [ "$window" = "$target" ]; then
+      printf '%s' "$meta"
+      return 0
+    fi
   done
   return 1
 }
@@ -393,7 +394,9 @@ sc_backend_target_exists() {  # <backend> <target>
       sc_backend_source herdr || return 1
       session=${target%%:*}
       pane=${target#*:}
-      [ -n "$session" ] && [ -n "$pane" ] && [ "$pane" != "$target" ] || return 1
+      if [ -z "$session" ] || [ -z "$pane" ] || [ "$pane" = "$target" ]; then
+        return 1
+      fi
       sc_backend_herdr_cli "$session" pane get "$pane" >/dev/null 2>&1
       ;;
     *)
