@@ -32,33 +32,16 @@ SC_ROOT="${SC_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 SC_HOME="${SC_HOME:-${SC_ROOT_OVERRIDE:-$SC_ROOT}}"
 STATE="${SC_STATE_OVERRIDE:-$SC_HOME/state}"
 
-# shellcheck source=bin/sc-tmux-lib.sh
-. "$SCRIPT_DIR/sc-tmux-lib.sh"
+# shellcheck source=bin/sc-backend.sh
+. "$SCRIPT_DIR/sc-backend.sh"
 # shellcheck source=bin/sc-marker-lib.sh
 . "$SCRIPT_DIR/sc-marker-lib.sh"
 
 "$SCRIPT_DIR/sc-guard.sh" || true
 
-resolve() {
-  case "$1" in
-    *:*) echo "$1" ;;
-    sc-*)
-      meta="$STATE/${1#sc-}.meta"
-      if [ ! -f "$meta" ]; then
-        echo "error: no metadata for $1 in $STATE; pass session:window to target a window outside this souschef home" >&2
-        exit 1
-      fi
-      window=$(grep '^window=' "$meta" 2>/dev/null | tail -1 | cut -d= -f2- || true)
-      [ -n "$window" ] || { echo "error: no window recorded in $meta" >&2; exit 1; }
-      echo "$window"
-      ;;
-    *) tmux list-windows -a -F '#{session_name}:#{window_name}' | grep -m1 ":$1\$" \
-         || { echo "error: no window named $1" >&2; exit 1; } ;;
-  esac
-}
-
 RAW_TARGET=$1
-T=$(resolve "$1")
+T=$(sc_backend_resolve_selector "$RAW_TARGET" "$STATE") || exit 1
+BACKEND=$(sc_backend_of_selector "$RAW_TARGET" "$T" "$STATE")
 shift
 
 # Mark a from-souschef -> secondmate request. Only a bare `sc-<id>` target,
@@ -77,7 +60,7 @@ case "$RAW_TARGET" in
 esac
 
 if [ "${1:-}" = "--key" ]; then
-  tmux send-keys -t "$T" "$2"
+  sc_backend_send_key "$BACKEND" "$T" "$2"
 else
   # Slash commands open a completion popup in some TUIs (verified on codex);
   # submitting too fast selects nothing. Give popups time to settle.
@@ -86,7 +69,7 @@ else
   sleep_s=${SC_SEND_SLEEP:-0.4}
   # Type once, submit, verify. Lenient: only a positively-confirmed swallow
   # (text still in the composer) is an error; an unreadable pane is assumed sent.
-  verdict=$(sc_tmux_submit_core "$T" "$MARK_PREFIX$*" "$retries" "$sleep_s" "$settle")
+  verdict=$(sc_backend_send_text_submit "$BACKEND" "$T" "$MARK_PREFIX$*" "$retries" "$sleep_s" "$settle")
   case "$verdict" in
     pending)
       echo "error: text not submitted to $T (Enter swallowed; text left in composer)" >&2

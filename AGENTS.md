@@ -82,7 +82,7 @@ projects/            cloned repos; gitignored; READ-ONLY for you
 state/               volatile runtime signals; gitignored
   <id>.status        appended by cooks: "<state>: <note>" lines
   <id>.turn-ended    touched by turn-end hooks
-  <id>.meta          written by sc-spawn: window=, worktree=, project=, harness=, kind=, mode=, yolo=; kind=secondmate also records home= and projects= (sc-pr-check appends pr= and verified pr_head= when available)
+  <id>.meta          written by sc-spawn: window=, worktree=, project=, harness=, kind=, mode=, yolo=; backend= only for a non-tmux session provider (absent means tmux; see docs/session-backends.md); kind=secondmate also records home= and projects= (sc-pr-check appends pr= and verified pr_head= when available)
   <id>.check.sh      optional slow poll you write per task (e.g. merged-PR check)
   .wake-queue        durable queued wakes: epoch<TAB>seq<TAB>kind<TAB>key<TAB>payload
   .afk               durable away-mode flag; present = sub-expediter may inject escalations (set by /afk, cleared on user return)

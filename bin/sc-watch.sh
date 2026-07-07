@@ -19,6 +19,8 @@ mkdir -p "$STATE"
 
 # shellcheck source=bin/sc-wake-lib.sh
 . "$SCRIPT_DIR/sc-wake-lib.sh"
+# shellcheck source=bin/sc-backend.sh
+. "$SCRIPT_DIR/sc-backend.sh"
 
 WATCH_LOCK="$STATE/.watch.lock"
 WATCH_PATH="$SCRIPT_DIR/sc-watch.sh"
@@ -94,6 +96,36 @@ window_kind() {
     return 0
   done
   echo unknown
+}
+
+# The session-provider backend recorded for the task owning window <w>, or tmux
+# (the compatibility default) when no meta names it.
+window_backend() {
+  local w=$1 meta mw
+  for meta in "$STATE"/*.meta; do
+    [ -e "$meta" ] || continue
+    mw=$(grep '^window=' "$meta" | cut -d= -f2- || true)
+    [ "$mw" = "$w" ] || continue
+    sc_backend_of_meta "$meta"
+    return 0
+  done
+  printf 'tmux'
+}
+
+# Is the pane busy (an agent mid-turn)? Prefers the backend's NATIVE agent-state
+# when it can answer (herdr reports busy/idle authoritatively via `agent get`);
+# a native "busy" suppresses a stale wake and a native "idle" allows one. Only
+# when the backend cannot tell (tmux, or an unreadable herdr pane -> unknown)
+# does it fall back to the pane-tail busy-footer regex, exactly as before.
+# Returns 0 (busy) / 1 (not busy).
+pane_busy() {  # <backend> <window> <tail-capture>
+  local bk=$1 w=$2 tail=$3 native
+  native=$(sc_backend_busy_state "$bk" "$w" 2>/dev/null || printf 'unknown')
+  case "$native" in
+    busy) return 0 ;;
+    idle) return 1 ;;
+  esac
+  printf '%s' "$tail" | grep -v '^[[:space:]]*$' | tail -6 | grep -qiE "$BUSY_REGEX"
 }
 
 # Is the window's ticket a prep cook held warm after reporting done? Souschef sets
@@ -288,7 +320,8 @@ EOF
     # needs-decision) is parked awaiting souschef, not wedged: it already woke
     # souschef via that status, so its idle pane must not generate stale wakes.
     window_delivered_idle "$w" && continue
-    tail40=$(tmux capture-pane -p -t "$w" -S -40 2>/dev/null) || continue
+    bk=$(window_backend "$w")
+    tail40=$(sc_backend_capture "$bk" "$w" 40 2>/dev/null) || continue
     h=$(printf '%s' "$tail40" | hash_pane)
     key=$(printf '%s' "$w" | tr ':/.' '___')
     hf="$STATE/.hash-$key"
@@ -298,10 +331,11 @@ EOF
     if [ "$h" = "$prev" ]; then
       n=$(( $(cat "$cf" 2>/dev/null || echo 0) + 1 ))
       echo "$n" > "$cf"
-      # Busy match runs on the last 6 non-blank lines only (the TUI footer area,
-      # where every verified harness renders its busy indicator) so busy-looking
-      # strings in displayed content cannot suppress stale detection.
-      if [ "$n" -ge 2 ] && ! printf '%s' "$tail40" | grep -v '^[[:space:]]*$' | tail -6 | grep -qiE "$BUSY_REGEX"; then
+      # Busy detection prefers the backend's native agent-state (herdr) and
+      # falls back to the pane-tail busy-footer regex (tmux). The regex match
+      # runs on the last 6 non-blank lines only (the TUI footer area) so
+      # busy-looking strings in displayed content cannot suppress stale detection.
+      if [ "$n" -ge 2 ] && ! pane_busy "$bk" "$w" "$tail40"; then
         if [ "$(cat "$sf" 2>/dev/null || true)" != "$h" ]; then
           sc_wake_append stale "$w" "stale: $w" || exit 1
           printf '%s' "$h" > "$sf"

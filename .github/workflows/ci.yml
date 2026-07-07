@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - run: shellcheck bin/*.sh tests/*.sh setup.sh
+      - run: shellcheck bin/*.sh bin/backends/*.sh tests/*.sh setup.sh
 
   parse:
     name: Parse scripts under bash 3.2 (macOS)
@@ -30,7 +30,7 @@ jobs:
           set -eu
           bash --version | head -1
           fail=0
-          for f in bin/*.sh setup.sh; do
+          for f in bin/*.sh bin/backends/*.sh setup.sh; do
             [ -e "$f" ] || continue
             if ! bash -n "$f"; then
               echo "::error file=$f::fails bash -n under $(bash --version | head -1)"

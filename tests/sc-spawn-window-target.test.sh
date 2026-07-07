@@ -12,20 +12,22 @@ set -u
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-SPAWN="$ROOT/bin/sc-spawn.sh"
+# The tmux new-window call now lives in the tmux backend adapter, reached through
+# bin/sc-backend.sh's dispatch, not inline in sc-spawn.sh.
+TMUX_BACKEND="$ROOT/bin/backends/tmux.sh"
 
-# The spawn script must target the session (trailing colon), never the bare
+# The tmux backend must target the session (trailing colon), never the bare
 # session name, when creating the cook window. This is the load-bearing fix.
 test_spawn_uses_colon_session_target() {
   # Single quotes are intentional: we grep for the literal source text, not an
-  # expansion of $SES/$SPAWN.
+  # expansion of $ses.
   # shellcheck disable=SC2016
-  grep -F 'tmux new-window -d -t "$SES:"' "$SPAWN" >/dev/null \
-    || fail "sc-spawn.sh new-window must target \"\$SES:\" (trailing colon), not the bare session name"
+  grep -F 'tmux new-window -d -t "$ses:"' "$TMUX_BACKEND" >/dev/null \
+    || fail "backends/tmux.sh new-window must target \"\$ses:\" (trailing colon), not the bare session name"
   # shellcheck disable=SC2016
-  grep -F 'tmux new-window -d -t "$SES"' "$SPAWN" >/dev/null \
-    && fail "sc-spawn.sh still uses the bare-session new-window target that fails with 'index N in use'"
-  pass "sc-spawn.sh targets the session with a trailing colon for new-window"
+  grep -F 'tmux new-window -d -t "$ses"' "$TMUX_BACKEND" >/dev/null \
+    && fail "backends/tmux.sh still uses the bare-session new-window target that fails with 'index N in use'"
+  pass "tmux backend targets the session with a trailing colon for new-window"
 }
 
 # Live tmux confirmation that the colon-suffixed target is correct: even with

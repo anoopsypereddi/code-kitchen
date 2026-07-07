@@ -132,11 +132,15 @@ Then just talk:
 Launching your harness from inside tmux puts every station window in your own session, where you can watch the brigade work in real time or jump into any station to intervene.
 Outside tmux, stations land in a detached `souschef` session you can attach to.
 
+If you run Souschef inside [herdr](https://herdr.dev), cooks can instead be spawned as native herdr panes so they show up in your herdr session (tmux windows are invisible to herdr).
+tmux stays the default and the fallback; see [docs/session-backends.md](docs/session-backends.md) for how to select the herdr backend and what it needs.
+
 ## Documentation
 
 - [docs/architecture.md](docs/architecture.md) - how the brigade, expediting, stations, station chefs, and delivery modes work.
 - [docs/configuration.md](docs/configuration.md) - environment variables, homes, the files you set, and harness support.
 - [docs/scripts.md](docs/scripts.md) - the `bin/` toolbelt reference.
+- [docs/session-backends.md](docs/session-backends.md) - the tmux/herdr session-provider backends: selecting one, requirements, and limitations.
 - [docs/containerization.md](docs/containerization.md) - the optional containerized kitchen: host boundary, mounts, credentials, and usage.
 - [`AGENTS.md`](AGENTS.md) - the Souschef's full operating manual.
 - [CONTRIBUTING.md](CONTRIBUTING.md) - how to contribute, including the dev/test commands.

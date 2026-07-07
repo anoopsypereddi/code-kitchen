@@ -43,6 +43,8 @@ STATE="${SC_STATE_OVERRIDE:-$SC_HOME/state}"
 DATA="${SC_DATA_OVERRIDE:-$SC_HOME/data}"
 SECONDMATE_REG="$DATA/secondmates.md"
 SUB_HOME_MARKER=".sc-secondmate-home"
+# shellcheck source=bin/sc-backend.sh
+. "$SCRIPT_DIR/sc-backend.sh"
 "$SC_ROOT/bin/sc-guard.sh" || true
 ID=$1
 FORCE=${2:-}
@@ -52,6 +54,7 @@ META="$STATE/$ID.meta"
 WT=$(grep '^worktree=' "$META" | cut -d= -f2-)
 T=$(grep '^window=' "$META" | cut -d= -f2-)
 PROJ=$(grep '^project=' "$META" | cut -d= -f2-)
+BACKEND=$(sc_backend_of_meta "$META")
 HOME_PATH=$(grep '^home=' "$META" | cut -d= -f2- || true)
 PR_URL=$(grep '^pr=' "$META" | tail -1 | cut -d= -f2- || true)
 
@@ -402,7 +405,7 @@ validate_souschef_home_children_removal() {
 }
 
 cleanup_souschef_home_children() {
-  local home=$1 sub_state child_meta child_id child_t child_wt child_proj child_kind child_home
+  local home=$1 sub_state child_meta child_id child_t child_wt child_proj child_kind child_home child_backend
   sub_state="$home/state"
   [ -d "$sub_state" ] || return 0
   for child_meta in "$sub_state"/*.meta; do
@@ -413,8 +416,9 @@ cleanup_souschef_home_children() {
     child_proj=$(meta_value "$child_meta" project)
     child_kind=$(meta_value "$child_meta" kind)
     [ -n "$child_kind" ] || child_kind=ship
+    child_backend=$(sc_backend_of_meta "$child_meta")
     if [ -n "$child_t" ]; then
-      tmux kill-window -t "$child_t" 2>/dev/null || true
+      sc_backend_kill "$child_backend" "$child_t" 2>/dev/null || true
     fi
     if [ "$child_kind" = secondmate ]; then
       child_home=$(meta_value "$child_meta" home)
@@ -551,7 +555,7 @@ if [ -d "$WT" ] && [ "$KIND" != secondmate ]; then
   fi
 fi
 
-tmux kill-window -t "$T" 2>/dev/null || true
+sc_backend_kill "$BACKEND" "$T" 2>/dev/null || true
 if [ "$KIND" = secondmate ]; then
   [ -n "$HOME_PATH" ] || HOME_PATH=$WT
   remove_souschef_home "$HOME_PATH" "secondmate home" "$ID"
