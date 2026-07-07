@@ -48,6 +48,8 @@ PROJECTS="${SC_PROJECTS_OVERRIDE:-$SC_HOME/projects}"
 SUB_HOME_MARKER=".sc-secondmate-home"
 # shellcheck source=bin/sc-ff-lib.sh
 . "$SCRIPT_DIR/sc-ff-lib.sh"
+# shellcheck source=bin/sc-backend.sh
+. "$SCRIPT_DIR/sc-backend.sh"
 # Skip the watcher guard when re-exec'd for one pair of a batch (SC_SPAWN_NO_GUARD is
 # set by the batch loop below), so the guard runs once for the batch, not once per pair.
 [ -n "${SC_SPAWN_NO_GUARD:-}" ] || "$SC_ROOT/bin/sc-guard.sh" || true
@@ -345,26 +347,55 @@ else
 fi
 [ -f "$BRIEF" ] || { echo "error: no brief at $BRIEF" >&2; exit 1; }
 
-# Same session when souschef already runs inside tmux; dedicated session otherwise.
-if [ -n "${TMUX:-}" ]; then
-  SES=$(tmux display-message -p '#S')
-else
-  tmux has-session -t souschef 2>/dev/null || tmux new-session -d -s souschef
-  SES=souschef
-fi
+# Resolve the session-provider backend for this spawn (bin/sc-backend.sh):
+# SC_BACKEND env, then config/backend, then runtime auto-detect, then tmux. tmux
+# is the default and creates a tmux window exactly as before; herdr creates a
+# native herdr pane so the cook is visible in the Chef's herdr session. A
+# per-spawn override is available via SC_BACKEND. Auto-detected herdr that is not
+# ready falls back to tmux (sc_backend_name warns), so a spawn never hard-fails
+# just because herdr/jq are absent.
+BACKEND=$(sc_backend_name)
+sc_backend_validate_spawn "$BACKEND" || exit 1
+# Source the adapter so its backend-specific container/task functions (called
+# directly below) are defined; the generic dispatchers source it too, but the
+# container-ensure/create-task step reaches into the adapter by name.
+sc_backend_source "$BACKEND" || exit 1
 
 W="sc-$ID"
-T="$SES:$W"
-if tmux list-windows -t "$SES" -F '#{window_name}' | grep -qx "$W"; then
-  echo "error: window $T already exists" >&2
-  exit 1
-fi
-
-# Target the session with a trailing colon: a bare session name ("$SES") is
-# misparsed by tmux as a window target and fails with "create window failed:
-# index N in use" when that index is occupied; "$SES:" unambiguously means this
-# session, auto-picking the next free window index.
-tmux new-window -d -t "$SES:" -n "$W" -c "$PROJ_ABS"
+# Create the task's terminal container (window/pane) in PROJ_ABS. Both backends
+# refuse a duplicate task and print the resolved TARGET string, which becomes the
+# meta window= value: "session:window" for tmux, "session:pane_id" for herdr.
+case "$BACKEND" in
+  tmux)
+    SES=$(sc_backend_tmux_container_ensure)
+    T=$(sc_backend_tmux_create_task "$SES" "$W" "$PROJ_ABS") || exit 1
+    ;;
+  herdr)
+    # A secondmate's tasks belong in the secondmate's OWN herdr workspace, whose
+    # label derives from its home marker - not the primary's. PROJ_ABS is the
+    # secondmate home here, so point the label resolver at it for this spawn.
+    if [ "$KIND" = secondmate ]; then
+      export SC_BACKEND_HERDR_HOME="$PROJ_ABS"
+    fi
+    if ! HERDR_RAW=$(sc_backend_herdr_container_ensure "$PROJ_ABS"); then
+      echo "error: could not ensure herdr workspace for $ID" >&2
+      exit 1
+    fi
+    HERDR_CONTAINER=${HERDR_RAW%%$'\t'*}
+    HERDR_SEEDED_TAB=${HERDR_RAW#*$'\t'}
+    if ! HERDR_CT=$(sc_backend_herdr_create_task "$HERDR_CONTAINER" "$W" "$PROJ_ABS" "$HERDR_SEEDED_TAB"); then
+      echo "error: could not create herdr task pane for $ID (tab $W)" >&2
+      exit 1
+    fi
+    HERDR_PANE=${HERDR_CT#* }
+    SES=${HERDR_CONTAINER%%:*}
+    T="$SES:$HERDR_PANE"
+    ;;
+  *)
+    echo "error: backend '$BACKEND' cannot spawn tasks" >&2
+    exit 1
+    ;;
+esac
 if [ "$KIND" != secondmate ]; then
   # Pre-fire clone sync: before sc-worktree.sh carves a worktree off this clone's
   # checked-out local default branch, fast-forward that branch to origin/<default>
@@ -408,12 +439,11 @@ if [ "$KIND" != secondmate ]; then
     exit 1
   fi
   # Drive the pane into the worktree (the agent launches in this same subshell).
-  tmux send-keys -t "$T" -l "cd $(shell_quote "$WT")"
-  tmux send-keys -t "$T" Enter
+  sc_backend_send_text_line "$BACKEND" "$T" "cd $(shell_quote "$WT")"
   # Settle: wait for the pane cwd to reach WT. The path is already authoritative
   # (from stdout above), so this only confirms the cd landed before we launch.
   for _ in $(seq 1 30); do
-    p=$(tmux display-message -p -t "$T" '#{pane_current_path}' 2>/dev/null || true)
+    p=$(sc_backend_current_path "$BACKEND" "$T" 2>/dev/null || true)
     [ "$p" = "$WT" ] && break
     sleep 0.2
   done
@@ -523,6 +553,10 @@ mkdir -p "$STATE"
   echo "kind=$KIND"
   echo "mode=$MODE"
   echo "yolo=$YOLO"
+  # Compatibility contract (bin/sc-backend.sh): omit backend= for the default
+  # tmux path so existing/new default metas stay byte-identical; record it only
+  # for a non-tmux backend so every reader routes ops through the right adapter.
+  [ "$BACKEND" = tmux ] || echo "backend=$BACKEND"
   if [ "$KIND" = secondmate ]; then
     echo "home=$PROJ_ABS"
     echo "projects=$SECONDMATE_PROJECTS"
@@ -544,8 +578,8 @@ fi
 # checkout so the agent launches there and its isolation check refuses. Prepend the
 # cd to the launch command itself so both run as one keystroke once the shell is idle.
 LAUNCH="cd $(shell_quote "$WT") && $LAUNCH"
-tmux send-keys -t "$T" -l "$LAUNCH"
+sc_backend_send_literal "$BACKEND" "$T" "$LAUNCH"
 sleep 0.3
-tmux send-keys -t "$T" Enter
+sc_backend_send_key "$BACKEND" "$T" Enter
 
-echo "spawned $ID harness=$HARNESS kind=$KIND mode=$MODE yolo=$YOLO window=$T worktree=$WT"
+echo "spawned $ID harness=$HARNESS kind=$KIND mode=$MODE yolo=$YOLO backend=$BACKEND window=$T worktree=$WT"

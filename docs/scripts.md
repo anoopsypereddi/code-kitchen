@@ -13,7 +13,7 @@ Each file also starts with a short header comment.
 | `sc-ensure-agents-md.sh` | Ensure project `AGENTS.md` is the real memory file and `CLAUDE.md` symlinks to it                                   |
 | `sc-guard.sh`            | Warn when the primary checkout is tangled, when queued wakes are pending, or when a stale or missing pass needs a prominent banner |
 | `sc-home-seed.sh`        | Lease/provision a station chef home transactionally, clone projects, and maintain `data/secondmates.md` |
-| `sc-spawn.sh`            | Fire one ticket, several `id=repo` pairs, or a persistent station chef with `--secondmate`; service/prep fires carve an isolated git worktree via `sc-worktree.sh`; station chef fires locally sync the home before launch |
+| `sc-spawn.sh`            | Fire one ticket, several `id=repo` pairs, or a persistent station chef with `--secondmate`; service/prep fires carve an isolated git worktree via `sc-worktree.sh`; station chef fires locally sync the home before launch; creates the cook's terminal container through the selected session-provider backend (`sc-backend.sh`) and records `backend=` for a non-tmux one |
 | `sc-worktree.sh`         | code-kitchen's native git-worktree manager (replaces treehouse): `get [--lease --lease-holder <id>]` carves an isolated worktree off the latest default tip and prints its path; `return [--force] <path>` kills lingering processes and removes it; `status`/`prune` list and reclaim. Worktree root: `$SC_WORKTREE_ROOT` (default `~/.sc-worktrees`) |
 | `sc-project-mode.sh`     | Resolve a project's delivery mode and `+yolo` flag from `data/projects.md`                                          |
 | `sc-merge-local.sh`      | Fast-forward a `local-only` project's local default branch after approval                                           |
@@ -28,7 +28,10 @@ Each file also starts with a short header comment.
 | `sc-wake-lib.sh`         | Shared durable wake queue and portable lock helpers sourced by the pass, drain, arm, guard, and daemon            |
 | `sc-send.sh`             | Send one verified literal line (or `--key Escape`) to a direct-report window; exits non-zero on confirmed swallowed Enter; bare `kind=secondmate` targets are marked as from-Souschef; text sends pause `SC_SEND_SETTLE` seconds after success |
 | `sc-tmux-lib.sh`         | Shared tmux pane primitives for busy detection, dim-ghost-aware and border-aware composer detection, and verified submit retry |
-| `sc-peek.sh`             | Print a bounded tail of a cook pane                                                                                 |
+| `sc-backend.sh`          | Session-provider backend selection (`SC_BACKEND`/`config/backend`/auto-detect/tmux), meta helpers, selector resolution, and per-op dispatch (spawn/send/peek/kill/busy-state) to `bin/backends/*.sh`; see [session-backends.md](session-backends.md) |
+| `backends/tmux.sh`       | The default tmux session-provider adapter (window per cook); the same tmux commands the scripts ran inline, so the default path is byte-identical |
+| `backends/herdr.sh`      | Experimental [herdr](https://herdr.dev) adapter: spawns each cook as a native herdr pane so cooks are visible inside herdr; needs `herdr` (protocol >= 14) and `jq` |
+| `sc-peek.sh`             | Print a bounded tail of a cook pane (backend-aware capture via `sc-backend.sh`)                                     |
 | `sc-pr-check.sh`         | Record `pr=` and a verified `pr_head=` when available for a PR-ready ticket, then arm the pass's merge poll         |
 | `sc-promote.sh`          | Promote a prep ticket in place so it becomes a protected service ticket                                             |
 | `sc-teardown.sh`         | Return a clean, landed service worktree or retire/release a station chef home; requires prep tasting notes, checks child work, and prints the backlog reminder |

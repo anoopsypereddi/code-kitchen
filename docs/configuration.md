@@ -42,6 +42,13 @@ claude, codex, opencode, and pi are all empirically verified; new harnesses get 
 The verified adapter knowledge - busy signatures, interrupt and exit commands, skill-invocation syntax, and per-harness quirks - lives in [`.agents/skills/harness-adapters/SKILL.md`](../.agents/skills/harness-adapters/SKILL.md).
 Launch mechanics, including the verified command templates, live in [`bin/sc-spawn.sh`](../bin/sc-spawn.sh).
 
+## Session-provider backend (tmux, herdr)
+
+Souschef spawns each cook into a session provider. The default is **tmux** (each cook is a tmux window); the experimental **herdr** backend spawns each cook as a native [herdr](https://herdr.dev) pane, so cooks are visible in your herdr session (tmux windows are invisible to herdr).
+Selection order per spawn: `SC_BACKEND` env, then a single word (`herdr`/`tmux`) in `config/backend`, then auto-detection when Souschef runs inside herdr (`HERDR_ENV=1`, no `$TMUX`), then tmux.
+An explicit `SC_BACKEND`/`config/backend` is a hard choice and fails loudly if herdr is unusable; an auto-detected herdr that is not ready (missing `herdr`/`jq`, or an old protocol) falls back to tmux with a warning.
+The herdr backend needs the `herdr` CLI (protocol >= 14) and `jq`, both gated behind selecting it. See [session-backends.md](session-backends.md) for the full contract, the meta compatibility rule, station-chef behavior, and limitations.
+
 ## Toolchain
 
 On first launch the sous-chef detects what its required toolchain is missing or too old (tmux, node, gh, git, curl), lists it with the exact install commands, and installs only after you say go. (Worktrees are managed by the built-in `bin/sc-worktree.sh` on plain `git worktree`, so there is no third-party worktree tool to detect.)
@@ -60,6 +67,8 @@ SC_STATE_OVERRIDE=       # alternate state dir, mainly for tests
 SC_DATA_OVERRIDE=        # alternate data dir, mainly for tests
 SC_PROJECTS_OVERRIDE=    # alternate projects dir, mainly for tests
 SC_CONFIG_OVERRIDE=      # alternate config dir, mainly for tests
+SC_BACKEND=              # session-provider backend override (herdr|tmux); wins over config/backend and auto-detect
+SC_BACKEND_HERDR_MIN_PROTOCOL=14   # minimum herdr client protocol accepted by the herdr backend
 SC_POLL=15              # seconds between pass cycles
 SC_HEARTBEAT=600        # base seconds between brigade reviews; backs off exponentially while idle
 SC_HEARTBEAT_MAX=7200   # heartbeat backoff cap
