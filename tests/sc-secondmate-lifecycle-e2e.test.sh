@@ -23,6 +23,14 @@
 #   - teardown removes meta and the registry route only after removing the home
 set -u
 
+# This is a fake-tmux e2e: it injects a fake `tmux` and asserts tmux-backend
+# launch behavior throughout, so it must run on the tmux backend regardless of
+# the host. Pin it so an ambient HERDR_ENV/TMUX (e.g. running the suite from
+# inside herdr) can't auto-detect a different session provider and break the
+# fake-tmux assertions. SC_BACKEND is the highest-precedence selector, inherited
+# by every sc-spawn.sh/sc-send.sh/sc-teardown.sh subprocess this test drives.
+export SC_BACKEND=tmux
+
 # shellcheck source=tests/secondmate-helpers.sh
 . "$(dirname "${BASH_SOURCE[0]}")/secondmate-helpers.sh"
 
