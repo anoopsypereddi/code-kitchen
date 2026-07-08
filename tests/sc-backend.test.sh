@@ -189,14 +189,51 @@ test_herdr_parse_target() {
 test_herdr_workspace_label() {
   local d out
   d=$(casedir herdr-wslabel)
-  out=$( SC_HOME="$d" in_fresh_backend 'sc_backend_source herdr; sc_backend_herdr_workspace_label' )
-  [ "$out" = souschef ] || fail "primary home workspace label must be 'souschef', got '$out'"
+  # A project cook (ship/scout) fired from the PRIMARY home is labeled after the
+  # PROJECT it works, not after the home.
+  out=$( SC_HOME="$d" in_fresh_backend 'sc_backend_source herdr; sc_backend_herdr_workspace_label ship /some/where/projects/code-kitchen' )
+  [ "$out" = "sc-code-kitchen" ] || fail "primary project cook label must be 'sc-code-kitchen', got '$out'"
+  out=$( SC_HOME="$d" in_fresh_backend 'sc_backend_source herdr; sc_backend_herdr_workspace_label scout /some/where/projects/dotfiles' )
+  [ "$out" = "sc-dotfiles" ] || fail "primary scout label must follow the project (sc-dotfiles), got '$out'"
+  # A project cook fired from a SECONDMATE home keeps a home qualifier.
   printf 'triage-h2\n' > "$d/.sc-secondmate-home"
-  out=$( SC_HOME="$d" in_fresh_backend 'sc_backend_source herdr; sc_backend_herdr_workspace_label' )
-  [ "$out" = "sc-2ndmate-triage-h2" ] || fail "secondmate workspace label must be 'sc-2ndmate-triage-h2', got '$out'"
-  out=$( SC_HOME="$ROOT" SC_BACKEND_HERDR_HOME="$d" in_fresh_backend 'sc_backend_source herdr; sc_backend_herdr_workspace_label' )
-  [ "$out" = "sc-2ndmate-triage-h2" ] || fail "SC_BACKEND_HERDR_HOME override must set the label, got '$out'"
-  pass "herdr workspace label: souschef for primary, sc-2ndmate-<id> for a secondmate home"
+  out=$( SC_HOME="$d" in_fresh_backend 'sc_backend_source herdr; sc_backend_herdr_workspace_label ship /some/where/projects/code-kitchen' )
+  [ "$out" = "sc-2ndmate-triage-h2-code-kitchen" ] || fail "secondmate project cook label must be 'sc-2ndmate-triage-h2-code-kitchen', got '$out'"
+  # A kind=secondmate LAUNCH (PROJ_ABS is the secondmate HOME) keeps the
+  # home-based label, unchanged from the old scheme.
+  out=$( SC_HOME="$ROOT" SC_BACKEND_HERDR_HOME="$d" in_fresh_backend "sc_backend_source herdr; sc_backend_herdr_workspace_label secondmate '$d'" )
+  [ "$out" = "sc-2ndmate-triage-h2" ] || fail "secondmate launch label must be 'sc-2ndmate-triage-h2', got '$out'"
+  pass "herdr workspace label: sc-<project> for a project cook, home-qualified under a secondmate, sc-2ndmate-<id> for a secondmate launch"
+}
+
+# (a) two DIFFERENT projects fired from the SAME home must resolve to two
+# DIFFERENT workspace labels - the per-project split that lets prefix+shift+N hop
+# between projects instead of parking every cook in one shared home workspace.
+test_herdr_workspace_label_per_project_split() {
+  local d one two
+  d=$(casedir herdr-wslabel-split)
+  one=$( SC_HOME="$d" in_fresh_backend 'sc_backend_source herdr; sc_backend_herdr_workspace_label ship /p/projects/alpha' )
+  two=$( SC_HOME="$d" in_fresh_backend 'sc_backend_source herdr; sc_backend_herdr_workspace_label ship /p/projects/beta' )
+  [ "$one" = "sc-alpha" ] || fail "project alpha must label 'sc-alpha', got '$one'"
+  [ "$two" = "sc-beta" ] || fail "project beta must label 'sc-beta', got '$two'"
+  [ "$one" != "$two" ] || fail "two different projects from one home must get DIFFERENT workspace labels, both were '$one'"
+  pass "two projects fired from one home get two different workspace labels"
+}
+
+# (b) cross-home isolation is preserved as a STRICT refinement: a secondmate's
+# project cook must NOT collide with the primary's cook for the SAME-named
+# project - the home qualifier keeps them in distinct workspaces.
+test_herdr_workspace_label_no_cross_home_collision() {
+  local primary sec pri_label sec_label
+  primary=$(casedir herdr-wslabel-primary)
+  sec=$(casedir herdr-wslabel-secondmate)
+  printf 'triage-h2\n' > "$sec/.sc-secondmate-home"
+  pri_label=$( SC_HOME="$primary" in_fresh_backend 'sc_backend_source herdr; sc_backend_herdr_workspace_label ship /p/projects/code-kitchen' )
+  sec_label=$( SC_HOME="$sec" in_fresh_backend 'sc_backend_source herdr; sc_backend_herdr_workspace_label ship /q/projects/code-kitchen' )
+  [ "$pri_label" = "sc-code-kitchen" ] || fail "primary same-named project label must be 'sc-code-kitchen', got '$pri_label'"
+  [ "$sec_label" = "sc-2ndmate-triage-h2-code-kitchen" ] || fail "secondmate same-named project label must be home-qualified, got '$sec_label'"
+  [ "$pri_label" != "$sec_label" ] || fail "a secondmate's project cook must NOT collide with the primary's same-named project, both were '$pri_label'"
+  pass "a secondmate's project cook does not collide with the primary's same-named project"
 }
 
 # --- herdr CLI command construction (fake herdr binary; needs jq) -----------
@@ -269,6 +306,8 @@ test_resolve_sc_id_missing_meta_errors
 test_herdr_normalize_key
 test_herdr_parse_target
 test_herdr_workspace_label
+test_herdr_workspace_label_per_project_split
+test_herdr_workspace_label_no_cross_home_collision
 test_herdr_kill_command
 test_herdr_busy_state_command
 test_herdr_send_key_command

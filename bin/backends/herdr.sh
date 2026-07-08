@@ -17,10 +17,18 @@
 # sc_backend_source in normal operation; the unit tests source it directly, so
 # the SC_HOME fallback below keeps that path sane without sc-backend.sh's preamble.
 #
-# Container shape: ONE herdr workspace PER SOUSCHEF HOME (the primary, and each
-# secondmate, gets its own), ONE herdr TAB per task inside its home's workspace.
-# Workspace-per-home keeps human-watching ergonomics good while giving every
-# home its own space, labeled distinctly, in the shared spaces sidebar.
+# Container shape: ONE herdr workspace PER PROJECT, ONE herdr TAB per cook inside
+# that project's workspace. A project cook's tab lands in a workspace named after
+# the PROJECT it works (projects/foo -> workspace "sc-foo"), so prefix+shift+N
+# hops between PROJECT workspaces while prefix+N hops between cook tabs inside the
+# current project. Cross-home isolation is preserved as a strict refinement of the
+# old workspace-per-home scheme: a cook fired from a SECONDMATE home keeps a home
+# qualifier in its label ("sc-2ndmate-<id>-<project>") so a primary and a
+# secondmate that both clone a same-named project never collide in a shared herdr
+# session. The special case is the primary LAUNCHING a station chef (kind=secondmate):
+# that tab is not a project cook - its "project" is the secondmate HOME - so it
+# keeps the home-based "sc-2ndmate-<id>" label unchanged. The Souschef expediter
+# pane keeps its own workspace; no cook tab is placed there.
 #
 # Target string shape: "<herdr-session>:<pane-id>", e.g. "default:w1:p2" (the
 # pane id itself contains a colon; the session is always the FIRST field, the
@@ -54,23 +62,45 @@ sc_backend_herdr_home() {
   printf '%s' "${SC_BACKEND_HERDR_HOME:-$SC_HOME}"
 }
 
-# sc_backend_herdr_workspace_label: the per-souschef-HOME herdr workspace label.
-# The PRIMARY home (no secondmate marker) resolves to the constant "souschef".
-# A SECONDMATE home resolves to "sc-2ndmate-<secondmate-id>", so its tasks land
-# in their own workspace, distinguishable from the primary's (and from every
-# other secondmate's) in herdr's spaces sidebar.
-sc_backend_herdr_workspace_label() {
-  local home marker id
+# sc_backend_herdr_workspace_label: the herdr workspace label for a cook tab.
+# Takes the cook's KIND and the PROJECT path it works, so a project cook's tab
+# lands in a workspace named after the project rather than a single shared
+# per-home workspace:
+#   ship/scout (a project cook) from the PRIMARY home    -> "sc-<project-basename>"
+#   ship/scout from a SECONDMATE home (marker present)   -> "sc-2ndmate-<id>-<project-basename>"
+#   secondmate (the primary LAUNCHING a station chef;
+#     <project> is the secondmate HOME, not a project)   -> "sc-2ndmate-<id>" (home-based, unchanged)
+# The home qualifier on a secondmate's project cook keeps a primary and a
+# secondmate that both clone a same-named project from colliding in a shared
+# herdr session. The secondmate id is read from the firing home's marker via
+# sc_backend_herdr_home (which honors SC_BACKEND_HERDR_HOME for a station-chef
+# launch). A secondmate launch with no readable id falls back to "souschef",
+# preserving the previous primary-home default.
+sc_backend_herdr_workspace_label() {  # <kind> <project-path>
+  local kind=${1:-ship} project=${2:-} home marker id base
   home=$(sc_backend_herdr_home)
   marker="$home/$SC_BACKEND_HERDR_SECONDMATE_MARKER"
+  id=""
   if [ -f "$marker" ]; then
     id=$(tr -d '[:space:]' < "$marker" 2>/dev/null)
+  fi
+  if [ "$kind" = secondmate ]; then
+    # Launching a station chef: <project> is the secondmate HOME, not a project.
+    # Keep the home-based label exactly as before.
     if [ -n "$id" ]; then
       printf 'sc-2ndmate-%s' "$id"
       return 0
     fi
+    printf 'souschef'
+    return 0
   fi
-  printf 'souschef'
+  # A project cook (ship/scout): name the workspace after the PROJECT.
+  base=$(basename "$project")
+  if [ -n "$id" ]; then
+    printf 'sc-2ndmate-%s-%s' "$id" "$base"
+    return 0
+  fi
+  printf 'sc-%s' "$base"
 }
 
 # sc_backend_herdr_cli: run `herdr <args...>` scoped to <session>, setting BOTH
@@ -149,14 +179,14 @@ sc_backend_herdr_server_ensure() {  # <session>
   return 1
 }
 
-# sc_backend_herdr_workspace_find: this HOME's own workspace id inside <session>
-# (sc_backend_herdr_workspace_label), or empty (never creates). Read-only, safe
-# for recovery/list paths. Adopts the FIRST matching workspace jq returns (list
-# order, normally oldest) rather than disambiguating, since herdr enforces no
-# label uniqueness.
-sc_backend_herdr_workspace_find() {  # <session>
-  local session=$1 label list
-  label=$(sc_backend_herdr_workspace_label)
+# sc_backend_herdr_workspace_find: the workspace id inside <session> for the cook
+# tab described by <kind>/<project> (its sc_backend_herdr_workspace_label), or
+# empty (never creates). Read-only, safe for recovery/list paths. Adopts the
+# FIRST matching workspace jq returns (list order, normally oldest) rather than
+# disambiguating, since herdr enforces no label uniqueness.
+sc_backend_herdr_workspace_find() {  # <session> <kind> <project>
+  local session=$1 kind=${2:-ship} project=${3:-} label list
+  label=$(sc_backend_herdr_workspace_label "$kind" "$project")
   list=$(sc_backend_herdr_cli "$session" workspace list 2>/dev/null) || return 0
   # NOTE: the jq variable is $want, NOT $label - `label` is a jq reserved keyword
   # (label/break), so declaring a jq variable named "label" is a compile error.
@@ -190,8 +220,9 @@ sc_backend_herdr_workspace_prune_seeded_default_tab() {  # <session> <workspace_
   sc_backend_herdr_cli "$session" pane close "$pane_id" >/dev/null 2>&1 || true
 }
 
-# sc_backend_herdr_workspace_ensure: this HOME's persistent workspace inside
-# <session>, creating it in <cwd> if absent. Must be called as a PLAIN STATEMENT,
+# sc_backend_herdr_workspace_ensure: the PROJECT's persistent workspace inside
+# <session>, creating it in <cwd> if absent. <cwd> is the project path the cook
+# works (the label derives from it via <kind>). Must be called as a PLAIN STATEMENT,
 # never through command substitution - it communicates through these globals:
 #   SC_BACKEND_HERDR_WS_ID          - the resolved workspace_id (also echoed)
 #   SC_BACKEND_HERDR_WS_SEEDED_TAB_ID - non-empty ONLY when THIS call just
@@ -202,17 +233,17 @@ sc_backend_herdr_workspace_prune_seeded_default_tab() {  # <session> <workspace_
 #                                       workspace's tabs are NEVER pruned.
 # --no-focus keeps workspace create from stealing the Chef's focus (a no-op in
 # the already-safe case, defense in depth otherwise).
-sc_backend_herdr_workspace_ensure() {  # <session> <cwd>
-  local session=$1 cwd=$2 wsid out label
+sc_backend_herdr_workspace_ensure() {  # <session> <cwd> <kind>
+  local session=$1 cwd=$2 kind=${3:-ship} wsid out label
   SC_BACKEND_HERDR_WS_ID=""
   SC_BACKEND_HERDR_WS_SEEDED_TAB_ID=""
-  wsid=$(sc_backend_herdr_workspace_find "$session")
+  wsid=$(sc_backend_herdr_workspace_find "$session" "$kind" "$cwd")
   if [ -n "$wsid" ]; then
     SC_BACKEND_HERDR_WS_ID=$wsid
     printf '%s' "$wsid"
     return 0
   fi
-  label=$(sc_backend_herdr_workspace_label)
+  label=$(sc_backend_herdr_workspace_label "$kind" "$cwd")
   out=$(sc_backend_herdr_cli "$session" workspace create --cwd "$cwd" --label "$label" --no-focus 2>/dev/null) || return 1
   wsid=$(printf '%s' "$out" | jq -r '.result.workspace.workspace_id // empty' 2>/dev/null)
   [ -n "$wsid" ] || return 1
@@ -227,18 +258,20 @@ sc_backend_herdr_workspace_ensure() {  # <session> <cwd>
 }
 
 # sc_backend_herdr_container_ensure: the full spawn-time container-ensure
-# sequence (version gate, server, workspace). Echoes
+# sequence (version gate, server, workspace). <cwd> is the PROJECT path the cook
+# works (or the secondmate HOME for a kind=secondmate launch); the workspace
+# label derives from it via <kind>. Echoes
 # "<session>:<workspace_id>\t<seeded_default_tab_id>" - a single TAB always
 # separates the two fields (the second is empty for an ADOPTED workspace) so a
 # caller can split with CONTAINER=${RAW%%$'\t'*}; SEEDED=${RAW#*$'\t'}.
-sc_backend_herdr_container_ensure() {  # <cwd-for-a-fresh-workspace>
-  local cwd=${1:-$PWD} session label
+sc_backend_herdr_container_ensure() {  # <cwd-for-a-fresh-workspace> <kind>
+  local cwd=${1:-$PWD} kind=${2:-ship} session label
   sc_backend_herdr_version_check || return 1
   session=$(sc_backend_herdr_session)
   sc_backend_herdr_server_ensure "$session" || return 1
-  sc_backend_herdr_workspace_ensure "$session" "$cwd" >/dev/null || { label=$(sc_backend_herdr_workspace_label); echo "error: failed to ensure herdr workspace '$label' in session '$session'" >&2; return 1; }
+  sc_backend_herdr_workspace_ensure "$session" "$cwd" "$kind" >/dev/null || { label=$(sc_backend_herdr_workspace_label "$kind" "$cwd"); echo "error: failed to ensure herdr workspace '$label' in session '$session'" >&2; return 1; }
   if [ -z "$SC_BACKEND_HERDR_WS_ID" ]; then
-    label=$(sc_backend_herdr_workspace_label)
+    label=$(sc_backend_herdr_workspace_label "$kind" "$cwd")
     echo "error: failed to ensure herdr workspace '$label' in session '$session'" >&2
     return 1
   fi
@@ -594,13 +627,13 @@ EOF
 }
 
 # sc_backend_herdr_list_live: recovery/orphan discovery. Lists every tab whose
-# label looks like a souschef task window (sc-<id>) in <session>'s, THIS HOME'S
-# OWN workspace, by LABEL - never by trusting a stored pane id, since ids are not
-# guaranteed stable across every server lifecycle. Read-only. One
-# "<session>:<pane_id>\t<label>" line per live task tab.
-sc_backend_herdr_list_live() {  # <session>
-  local session=$1 wsid tabs tab_id label pane_id
-  wsid=$(sc_backend_herdr_workspace_find "$session") || return 0
+# label looks like a souschef task window (sc-<id>) in <session>'s workspace for
+# the cook described by <kind>/<project>, by LABEL - never by trusting a stored
+# pane id, since ids are not guaranteed stable across every server lifecycle.
+# Read-only. One "<session>:<pane_id>\t<label>" line per live task tab.
+sc_backend_herdr_list_live() {  # <session> <kind> <project>
+  local session=$1 kind=${2:-ship} project=${3:-} wsid tabs tab_id label pane_id
+  wsid=$(sc_backend_herdr_workspace_find "$session" "$kind" "$project") || return 0
   [ -n "$wsid" ] || return 0
   tabs=$(sc_backend_herdr_cli "$session" tab list --workspace "$wsid" 2>/dev/null) || return 0
   while IFS=$'\t' read -r tab_id label; do

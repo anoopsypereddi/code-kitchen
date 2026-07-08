@@ -371,13 +371,16 @@ case "$BACKEND" in
     T=$(sc_backend_tmux_create_task "$SES" "$W" "$PROJ_ABS") || exit 1
     ;;
   herdr)
-    # A secondmate's tasks belong in the secondmate's OWN herdr workspace, whose
-    # label derives from its home marker - not the primary's. PROJ_ABS is the
-    # secondmate home here, so point the label resolver at it for this spawn.
+    # A project cook's tab belongs in a workspace named after the PROJECT it
+    # works (PROJ_ABS); the label resolver derives that from PROJ_ABS + KIND.
+    # For a kind=secondmate LAUNCH, PROJ_ABS is the secondmate HOME (not a
+    # project), so its tab keeps the home-based label - point the resolver at
+    # that home via SC_BACKEND_HERDR_HOME so it reads the home's secondmate
+    # marker rather than the primary's.
     if [ "$KIND" = secondmate ]; then
       export SC_BACKEND_HERDR_HOME="$PROJ_ABS"
     fi
-    if ! HERDR_RAW=$(sc_backend_herdr_container_ensure "$PROJ_ABS"); then
+    if ! HERDR_RAW=$(sc_backend_herdr_container_ensure "$PROJ_ABS" "$KIND"); then
       echo "error: could not ensure herdr workspace for $ID" >&2
       exit 1
     fi
