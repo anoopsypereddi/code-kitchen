@@ -82,10 +82,20 @@ tmux directly.
 
 ### Container shape (herdr)
 
-One herdr **workspace per Souschef home** (the primary is labeled `souschef`;
-each station chef is `sc-2ndmate-<id>`), one herdr **tab (pane) per cook** inside
-that workspace. The workspace-per-home layout keeps every home's cooks grouped
-and distinctly labeled in herdr's spaces sidebar.
+Cooks land in the **same workspace as the Souschef pane** that spawns them, one
+herdr **tab (pane) per cook**, so they appear as sibling tabs the Chef can select
+with herdr's `prefix 1..9` (which only switches between tabs *within* the current
+workspace). When Souschef itself runs inside a herdr pane, herdr exports
+`HERDR_WORKSPACE_ID` naming that pane's workspace; the backend **adopts** that
+workspace and drops each cook's tab into it. Adopting never prunes or disturbs
+the Chef's pre-existing tabs there - the seeded-default-tab prune runs only for a
+workspace the backend itself just created.
+
+When `HERDR_WORKSPACE_ID` is absent or does not name a live workspace in the
+session (Souschef is not itself in a herdr pane, or the headless unit-test
+harness), the backend **falls back** to a per-home **named workspace** (the
+primary is labeled `souschef`; each station chef is `sc-2ndmate-<id>`),
+find-or-created, keeping the original headless behavior intact.
 
 ### Meta and the compatibility contract
 
@@ -104,11 +114,16 @@ adapter.
 
 ## Station chefs
 
-Station chefs (secondmates) are supported on herdr: a station chef's cooks land
-in the station chef's **own** herdr workspace (`sc-2ndmate-<id>`), derived from
-its home marker, not the primary's. Each station chef is itself a Souschef home,
-so it resolves its own backend the same way (its own `SC_BACKEND` /
-`config/backend` / auto-detect).
+Station chefs (secondmates) are supported on herdr through the **same
+controlling-pane mechanism**: a station chef is its own Souschef home launched as
+its own herdr pane, so when it spawns its cooks *its* `HERDR_WORKSPACE_ID` places
+them beside it. The one deliberate exception is the primary launching a station
+chef's *own* pane: there the primary declines to adopt its own workspace (it
+sets `SC_BACKEND_HERDR_HOME` for that spawn) and instead uses the station chef's
+named workspace (`sc-2ndmate-<id>`), so the station chef pane - and every cook it
+later spawns beside itself - lives in its own space rather than the primary's.
+Each station chef is itself a Souschef home, so it resolves its own backend the
+same way (its own `SC_BACKEND` / `config/backend` / auto-detect).
 
 ## Known limitations
 

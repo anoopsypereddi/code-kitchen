@@ -17,10 +17,22 @@
 # sc_backend_source in normal operation; the unit tests source it directly, so
 # the SC_HOME fallback below keeps that path sane without sc-backend.sh's preamble.
 #
-# Container shape: ONE herdr workspace PER SOUSCHEF HOME (the primary, and each
-# secondmate, gets its own), ONE herdr TAB per task inside its home's workspace.
-# Workspace-per-home keeps human-watching ergonomics good while giving every
-# home its own space, labeled distinctly, in the shared spaces sidebar.
+# Container shape: cooks land in the SAME workspace as the souschef pane that
+# spawns them, so they appear as sibling tabs the Chef can select with herdr's
+# `prefix 1..9` (switch_tab, which only selects tabs WITHIN the current
+# workspace). When souschef itself runs inside herdr, herdr exports
+# HERDR_WORKSPACE_ID naming its pane's workspace; this backend ADOPTS that
+# workspace (leaving the Chef's existing tabs untouched) and drops each cook's
+# TAB into it. When HERDR_WORKSPACE_ID is absent or does not name a live
+# workspace in the session (souschef not in a herdr pane, or the headless unit-
+# test harness), it FALLS BACK to a per-home NAMED workspace - one per souschef
+# home ("souschef" for the primary, "sc-2ndmate-<id>" for a secondmate) - which
+# is the original behavior. Either way it is ONE herdr TAB per task inside the
+# resolved workspace. Secondmate semantics ride the SAME mechanism: a secondmate
+# is its own souschef home launched as its own herdr pane, so when it spawns its
+# cooks ITS HERDR_WORKSPACE_ID places them beside it; only the primary launching a
+# secondmate's own pane deliberately declines env adoption (see
+# sc_backend_herdr_workspace_adopt_env).
 #
 # Target string shape: "<herdr-session>:<pane-id>", e.g. "default:w1:p2" (the
 # pane id itself contains a colon; the session is always the FIRST field, the
@@ -149,11 +161,12 @@ sc_backend_herdr_server_ensure() {  # <session>
   return 1
 }
 
-# sc_backend_herdr_workspace_find: this HOME's own workspace id inside <session>
-# (sc_backend_herdr_workspace_label), or empty (never creates). Read-only, safe
-# for recovery/list paths. Adopts the FIRST matching workspace jq returns (list
-# order, normally oldest) rather than disambiguating, since herdr enforces no
-# label uniqueness.
+# sc_backend_herdr_workspace_find: this HOME's own NAMED workspace id inside
+# <session> (sc_backend_herdr_workspace_label), or empty (never creates). This is
+# the FALLBACK workspace used when there is no controlling-pane workspace to adopt
+# (see sc_backend_herdr_workspace_adopt_env). Read-only, safe for recovery/list
+# paths. Adopts the FIRST matching workspace jq returns (list order, normally
+# oldest) rather than disambiguating, since herdr enforces no label uniqueness.
 sc_backend_herdr_workspace_find() {  # <session>
   local session=$1 label list
   label=$(sc_backend_herdr_workspace_label)
@@ -162,6 +175,31 @@ sc_backend_herdr_workspace_find() {  # <session>
   # (label/break), so declaring a jq variable named "label" is a compile error.
   printf '%s' "$list" | jq -r --arg want "$label" \
     '.result.workspaces[]? | select(.label == $want) | .workspace_id' 2>/dev/null | head -1
+}
+
+# sc_backend_herdr_workspace_adopt_env: the CONTROLLING-PANE workspace to adopt,
+# or empty. When souschef itself runs inside a herdr pane, herdr exports
+# HERDR_WORKSPACE_ID naming that pane's workspace; adopting it puts every cook TAB
+# BESIDE the souschef tab in the same workspace, so the Chef can reach cooks with
+# `prefix 1..9` (herdr's switch_tab selects only tabs WITHIN the current
+# workspace). Returns the id ONLY when it names a LIVE workspace in THIS session,
+# so a stale/foreign id - or the unset headless / unit-test case - cleanly
+# declines and the caller falls back to the per-home named workspace. Read-only.
+#
+# EXCEPTION - the primary launching a SECONDMATE's own pane: sc-spawn.sh sets
+# SC_BACKEND_HERDR_HOME for exactly that spawn (and only that spawn). There the
+# target is a DIFFERENT souschef home, so the primary's own HERDR_WORKSPACE_ID is
+# the WRONG workspace: the secondmate must get its OWN named workspace, so that
+# when the secondmate later spawns its cooks, ITS pane's HERDR_WORKSPACE_ID places
+# them beside it. We therefore DECLINE env adoption whenever SC_BACKEND_HERDR_HOME
+# is set, falling through to the secondmate's named workspace.
+sc_backend_herdr_workspace_adopt_env() {  # <session>
+  local session=$1 wsid=${HERDR_WORKSPACE_ID:-} list
+  [ -z "${SC_BACKEND_HERDR_HOME:-}" ] || return 0
+  [ -n "$wsid" ] || return 0
+  list=$(sc_backend_herdr_cli "$session" workspace list 2>/dev/null) || return 0
+  printf '%s' "$list" | jq -r --arg id "$wsid" \
+    '.result.workspaces[]? | select(.workspace_id == $id) | .workspace_id' 2>/dev/null | head -1
 }
 
 # sc_backend_herdr_workspace_prune_seeded_default_tab: close EXACTLY
@@ -190,22 +228,38 @@ sc_backend_herdr_workspace_prune_seeded_default_tab() {  # <session> <workspace_
   sc_backend_herdr_cli "$session" pane close "$pane_id" >/dev/null 2>&1 || true
 }
 
-# sc_backend_herdr_workspace_ensure: this HOME's persistent workspace inside
-# <session>, creating it in <cwd> if absent. Must be called as a PLAIN STATEMENT,
-# never through command substitution - it communicates through these globals:
+# sc_backend_herdr_workspace_ensure: the workspace this spawn drops its task into,
+# inside <session>, creating a per-home named one in <cwd> only as a last resort.
+# Resolution order: (1) the CONTROLLING-PANE workspace from HERDR_WORKSPACE_ID if
+# it names a live workspace here (sc_backend_herdr_workspace_adopt_env), so cooks
+# land beside the souschef pane; (2) this home's existing NAMED workspace; (3) a
+# freshly CREATED named workspace. Must be called as a PLAIN STATEMENT, never
+# through command substitution - it communicates through these globals:
 #   SC_BACKEND_HERDR_WS_ID          - the resolved workspace_id (also echoed)
 #   SC_BACKEND_HERDR_WS_SEEDED_TAB_ID - non-empty ONLY when THIS call just
 #                                       CREATED the workspace: the tab_id of the
 #                                       auto-created default tab herdr seeded it
 #                                       with. Empty when this call ADOPTED a
-#                                       pre-existing workspace. An adopted
-#                                       workspace's tabs are NEVER pruned.
+#                                       pre-existing workspace (whether the
+#                                       controlling-pane one or a named one). An
+#                                       adopted workspace's tabs are NEVER pruned,
+#                                       so the Chef's existing tabs stay untouched.
 # --no-focus keeps workspace create from stealing the Chef's focus (a no-op in
 # the already-safe case, defense in depth otherwise).
 sc_backend_herdr_workspace_ensure() {  # <session> <cwd>
   local session=$1 cwd=$2 wsid out label
   SC_BACKEND_HERDR_WS_ID=""
   SC_BACKEND_HERDR_WS_SEEDED_TAB_ID=""
+  # (1) Adopt the controlling souschef pane's workspace when there is one.
+  wsid=$(sc_backend_herdr_workspace_adopt_env "$session")
+  if [ -n "$wsid" ]; then
+    SC_BACKEND_HERDR_WS_ID=$wsid
+    # ADOPTED, not created: SEEDED_TAB_ID stays empty so create_task never prunes
+    # a tab in a workspace we did not create.
+    printf '%s' "$wsid"
+    return 0
+  fi
+  # (2) Fall back to this home's existing named workspace.
   wsid=$(sc_backend_herdr_workspace_find "$session")
   if [ -n "$wsid" ]; then
     SC_BACKEND_HERDR_WS_ID=$wsid
@@ -594,13 +648,16 @@ EOF
 }
 
 # sc_backend_herdr_list_live: recovery/orphan discovery. Lists every tab whose
-# label looks like a souschef task window (sc-<id>) in <session>'s, THIS HOME'S
-# OWN workspace, by LABEL - never by trusting a stored pane id, since ids are not
-# guaranteed stable across every server lifecycle. Read-only. One
-# "<session>:<pane_id>\t<label>" line per live task tab.
+# label looks like a souschef task window (sc-<id>) in <session>'s workspace for
+# THIS souschef, by LABEL - never by trusting a stored pane id, since ids are not
+# guaranteed stable across every server lifecycle. Resolves the workspace the
+# same way a spawn does: the controlling-pane workspace when there is one (so
+# cooks adopted beside the souschef pane are discovered), else this home's named
+# workspace. Read-only. One "<session>:<pane_id>\t<label>" line per live task tab.
 sc_backend_herdr_list_live() {  # <session>
   local session=$1 wsid tabs tab_id label pane_id
-  wsid=$(sc_backend_herdr_workspace_find "$session") || return 0
+  wsid=$(sc_backend_herdr_workspace_adopt_env "$session")
+  [ -n "$wsid" ] || wsid=$(sc_backend_herdr_workspace_find "$session")
   [ -n "$wsid" ] || return 0
   tabs=$(sc_backend_herdr_cli "$session" tab list --workspace "$wsid" 2>/dev/null) || return 0
   while IFS=$'\t' read -r tab_id label; do
