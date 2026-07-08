@@ -199,6 +199,135 @@ test_herdr_workspace_label() {
   pass "herdr workspace label: souschef for primary, sc-2ndmate-<id> for a secondmate home"
 }
 
+# --- herdr workspace adoption (fake herdr binary; needs jq) ------------------
+#
+# The controlling-pane workspace behavior: a spawn drops cook tabs into the
+# souschef pane's OWN workspace (from HERDR_WORKSPACE_ID) when that names a live
+# workspace, so cooks are reachable via `prefix 1..9`; otherwise it falls back to
+# the per-home NAMED workspace. A fake `herdr` returns a configurable
+# `workspace list` (via $FAKE_WS_LIST) and canned `workspace create`/`tab *`
+# JSON, logging every call so we can assert whether create/prune ran.
+#
+# sc_backend_herdr_workspace_ensure is a PLAIN STATEMENT that communicates through
+# globals, so each case runs it then prints
+# "$SC_BACKEND_HERDR_WS_ID|$SC_BACKEND_HERDR_WS_SEEDED_TAB_ID".
+
+make_herdr_ws_fake() {  # <fakebin-dir> <log-file>
+  local fakebin=$1 log=$2
+  cat > "$fakebin/herdr" <<SH
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$log"
+case "\$1 \$2" in
+  "status --json")    printf '%s' '{"server":{"running":true},"client":{"protocol":99,"version":"test"}}' ;;
+  "workspace list")   printf '%s' "\$FAKE_WS_LIST" ;;
+  "workspace create") printf '%s' '{"result":{"workspace":{"workspace_id":"wNAMED"},"tab":{"tab_id":"seed0"}}}' ;;
+  "tab list")         printf '%s' '{"result":{"tabs":[]}}' ;;
+  "tab create")       printf '%s' '{"result":{"tab":{"tab_id":"t1"},"root_pane":{"pane_id":"w4:p9"}}}' ;;
+  *) printf '%s' '{"result":{}}' ;;
+esac
+exit 0
+SH
+  chmod +x "$fakebin/herdr"
+}
+
+test_herdr_adopts_controlling_pane_workspace() {
+  command -v jq >/dev/null 2>&1 || { echo "skip: jq not found"; return 0; }
+  local d fakebin log out
+  d=$(casedir herdr-adopt); fakebin=$(sc_fakebin "$d"); log="$d/herdr.log"; : > "$log"
+  make_herdr_ws_fake "$fakebin" "$log"
+  # HERDR_WORKSPACE_ID=w4 names a LIVE workspace (the Chef's code-kitchen space).
+  out=$(
+    HERDR_WORKSPACE_ID=w4 \
+    FAKE_WS_LIST='{"result":{"workspaces":[{"workspace_id":"w4","label":"code-kitchen"}]}}' \
+    PATH="$fakebin:$PATH" \
+    in_fresh_backend 'sc_backend_source herdr; sc_backend_herdr_workspace_ensure default /tmp >/dev/null; printf "%s|%s" "$SC_BACKEND_HERDR_WS_ID" "$SC_BACKEND_HERDR_WS_SEEDED_TAB_ID"'
+  )
+  [ "$out" = "w4|" ] || fail "must adopt the live controlling-pane workspace with an EMPTY seeded tab, got '$out'"
+  assert_no_grep "workspace create" "$log" "adopting an existing workspace must NOT create a new one"
+  pass "herdr adopts HERDR_WORKSPACE_ID when it names a live workspace (no seeded tab, no create)"
+}
+
+test_herdr_adopted_workspace_never_seeded_tab_pruned() {
+  command -v jq >/dev/null 2>&1 || { echo "skip: jq not found"; return 0; }
+  local d fakebin log out
+  d=$(casedir herdr-adopt-noprune); fakebin=$(sc_fakebin "$d"); log="$d/herdr.log"; : > "$log"
+  make_herdr_ws_fake "$fakebin" "$log"
+  # Ensure (adopt), then create a task in that adopted container passing the
+  # captured seeded-tab id through. Because adoption left it EMPTY, create_task
+  # must never run the seeded-default-tab prune (a `pane close`), so the Chef's
+  # pre-existing tabs are untouched.
+  out=$(
+    HERDR_WORKSPACE_ID=w4 \
+    FAKE_WS_LIST='{"result":{"workspaces":[{"workspace_id":"w4","label":"code-kitchen"}]}}' \
+    PATH="$fakebin:$PATH" \
+    in_fresh_backend 'sc_backend_source herdr;
+      sc_backend_herdr_workspace_ensure default /tmp >/dev/null;
+      sc_backend_herdr_create_task "default:$SC_BACKEND_HERDR_WS_ID" sc-x-k1 /tmp "$SC_BACKEND_HERDR_WS_SEEDED_TAB_ID" >/dev/null;
+      printf ok'
+  )
+  [ "$out" = ok ] || fail "create_task in an adopted workspace should succeed, got '$out'"
+  assert_grep "tab create" "$log" "create_task must still create the cook tab"
+  assert_no_grep "pane close" "$log" "an adopted workspace must NEVER be seeded-tab-pruned (no pane close)"
+  pass "an adopted workspace is never seeded-tab-pruned (the Chef's tabs stay untouched)"
+}
+
+test_herdr_falls_back_to_named_workspace_when_unset() {
+  command -v jq >/dev/null 2>&1 || { echo "skip: jq not found"; return 0; }
+  local d fakebin log out
+  d=$(casedir herdr-fallback); fakebin=$(sc_fakebin "$d"); log="$d/herdr.log"; : > "$log"
+  make_herdr_ws_fake "$fakebin" "$log"
+  # HERDR_WORKSPACE_ID unset: even though a code-kitchen workspace is live, the
+  # backend must NOT adopt it; it uses this home's NAMED "souschef" workspace.
+  out=$(
+    HERDR_WORKSPACE_ID='' SC_HOME="$d" \
+    FAKE_WS_LIST='{"result":{"workspaces":[{"workspace_id":"w4","label":"code-kitchen"},{"workspace_id":"wSOUS","label":"souschef"}]}}' \
+    PATH="$fakebin:$PATH" \
+    in_fresh_backend 'sc_backend_source herdr; sc_backend_herdr_workspace_ensure default /tmp >/dev/null; printf "%s|%s" "$SC_BACKEND_HERDR_WS_ID" "$SC_BACKEND_HERDR_WS_SEEDED_TAB_ID"'
+  )
+  [ "$out" = "wSOUS|" ] || fail "unset HERDR_WORKSPACE_ID must fall back to the named 'souschef' workspace, got '$out'"
+  assert_no_grep "workspace create" "$log" "finding the existing named workspace must NOT create a new one"
+  pass "herdr falls back to the named per-home workspace when HERDR_WORKSPACE_ID is unset"
+}
+
+test_herdr_falls_back_when_id_not_live() {
+  command -v jq >/dev/null 2>&1 || { echo "skip: jq not found"; return 0; }
+  local d fakebin log out
+  d=$(casedir herdr-stale); fakebin=$(sc_fakebin "$d"); log="$d/herdr.log"; : > "$log"
+  make_herdr_ws_fake "$fakebin" "$log"
+  # HERDR_WORKSPACE_ID names a workspace NOT present in this session's list -> no
+  # adoption -> create the named workspace (none exists), seeded tab captured.
+  out=$(
+    HERDR_WORKSPACE_ID=wGONE SC_HOME="$d" \
+    FAKE_WS_LIST='{"result":{"workspaces":[]}}' \
+    PATH="$fakebin:$PATH" \
+    in_fresh_backend 'sc_backend_source herdr; sc_backend_herdr_workspace_ensure default /tmp >/dev/null; printf "%s|%s" "$SC_BACKEND_HERDR_WS_ID" "$SC_BACKEND_HERDR_WS_SEEDED_TAB_ID"'
+  )
+  [ "$out" = "wNAMED|seed0" ] || fail "a non-live HERDR_WORKSPACE_ID must fall back to creating the named workspace (seeded tab captured), got '$out'"
+  assert_grep "workspace create --cwd /tmp --label souschef" "$log" "fallback must create the named 'souschef' workspace"
+  pass "herdr falls back to the named workspace when HERDR_WORKSPACE_ID is not live"
+}
+
+test_herdr_secondmate_launch_declines_env_adoption() {
+  command -v jq >/dev/null 2>&1 || { echo "skip: jq not found"; return 0; }
+  local d fakebin log out
+  d=$(casedir herdr-2ndmate); fakebin=$(sc_fakebin "$d"); log="$d/herdr.log"; : > "$log"
+  make_herdr_ws_fake "$fakebin" "$log"
+  # Edge case: the primary launching a SECONDMATE's own pane sets
+  # SC_BACKEND_HERDR_HOME. Even with a live HERDR_WORKSPACE_ID, the secondmate
+  # must get its OWN named workspace, not the primary's - so env adoption is
+  # declined. The secondmate home marker makes the label sc-2ndmate-<id>.
+  printf 'triage-h2\n' > "$d/.sc-secondmate-home"
+  out=$(
+    HERDR_WORKSPACE_ID=w4 SC_BACKEND_HERDR_HOME="$d" \
+    FAKE_WS_LIST='{"result":{"workspaces":[{"workspace_id":"w4","label":"code-kitchen"}]}}' \
+    PATH="$fakebin:$PATH" \
+    in_fresh_backend 'sc_backend_source herdr; sc_backend_herdr_workspace_ensure default /tmp >/dev/null; printf "%s|%s" "$SC_BACKEND_HERDR_WS_ID" "$SC_BACKEND_HERDR_WS_SEEDED_TAB_ID"'
+  )
+  [ "$out" = "wNAMED|seed0" ] || fail "a secondmate-launch spawn must decline env adoption and create its named workspace, got '$out'"
+  assert_grep "workspace create --cwd /tmp --label sc-2ndmate-triage-h2" "$log" "secondmate launch must create its OWN named workspace"
+  pass "the primary launching a secondmate's pane declines env adoption (uses the secondmate's named workspace)"
+}
+
 # --- herdr CLI command construction (fake herdr binary; needs jq) -----------
 #
 # A fake `herdr` records every invocation (one line per call) to $log and emits
@@ -269,6 +398,11 @@ test_resolve_sc_id_missing_meta_errors
 test_herdr_normalize_key
 test_herdr_parse_target
 test_herdr_workspace_label
+test_herdr_adopts_controlling_pane_workspace
+test_herdr_adopted_workspace_never_seeded_tab_pruned
+test_herdr_falls_back_to_named_workspace_when_unset
+test_herdr_falls_back_when_id_not_live
+test_herdr_secondmate_launch_declines_env_adoption
 test_herdr_kill_command
 test_herdr_busy_state_command
 test_herdr_send_key_command
