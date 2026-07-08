@@ -74,7 +74,11 @@ core tool list is unaffected, and a tmux-only brigade never needs them.
   scripts ran inline before, so the default path is byte-identical).
 - `bin/backends/herdr.sh` - the herdr adapter (adapted from the
   [firstmate](https://github.com/kunchenguid/firstmate) reference, verified
-  there against real herdr v0.7.1 / protocol 14).
+  there against real herdr v0.7.1 / protocol 14). When Souschef runs **inside** a
+  herdr pane (detected via `HERDR_SOCKET_PATH` / `HERDR_ENV`) a server is already
+  running, so the adapter never launches a second `herdr server`: a transiently
+  missed `status` probe only retries and, failing that, errors out - launching a
+  duplicate would bind the same socket and split cooks across two servers.
 
 `sc-spawn.sh`, `sc-send.sh`, `sc-peek.sh`, `sc-teardown.sh`, and `sc-watch.sh`
 all route their terminal operations through `sc-backend.sh` rather than calling

@@ -43,18 +43,30 @@
 # ledger is the durable record; `git worktree list` is the ground truth we
 # reconcile against.
 #
-# WORKTREE ROOT: $SC_WORKTREE_ROOT (default $HOME/.sc-worktrees), kept OUTSIDE
-# every repo so a worktree is always a genuinely isolated checkout. Per-repo
-# subdir <basename>-<hash-of-abs-primary-path> so two repos sharing a basename
-# never collide; the souschef-on-itself case (worktrees of this very repo) is
-# just another repo here.
+# WORKTREE ROOT: $SC_WORKTREE_ROOT (default $SC_HOME/worktrees), a `worktrees/`
+# directory INSIDE the souschef home so the whole workspace lives under one roof.
+# It is a SIBLING of projects/, so it stays OUTSIDE every managed repo's working
+# tree and a worktree carved there is still a genuinely isolated checkout (a git
+# worktree may never live inside another checkout's working tree). Per-repo subdir
+# <basename>-<hash-of-abs-primary-path> so two repos sharing a basename never
+# collide; the souschef-on-itself case (worktrees of this very repo) is just
+# another repo here. Each station chef sets its own SC_HOME, so $SC_HOME/worktrees
+# automatically isolates every home's worktrees. worktrees/ is gitignored so the
+# new root never dirties the souschef repo's own status.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=bin/sc-tangle-lib.sh
 . "$SCRIPT_DIR/sc-tangle-lib.sh"
 
-WORKTREE_ROOT="${SC_WORKTREE_ROOT:-$HOME/.sc-worktrees}"
+# Resolve SC_ROOT / SC_HOME the same way the other bin/ scripts do (mirrors
+# bin/sc-backend.sh's preamble), so the default worktree root tracks the souschef
+# home. SC_HOME is always set after this, falling back through SC_ROOT to the
+# repo root this script lives in.
+SC_ROOT="${SC_ROOT_OVERRIDE:-${SC_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}}"
+SC_HOME="${SC_HOME:-${SC_ROOT_OVERRIDE:-$SC_ROOT}}"
+
+WORKTREE_ROOT="${SC_WORKTREE_ROOT:-$SC_HOME/worktrees}"
 LEDGER_NAME="worktrees.tsv"
 LOCK_NAME="worktrees.lock.d"
 TAB=$(printf '\t')

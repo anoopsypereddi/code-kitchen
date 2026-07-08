@@ -292,6 +292,87 @@ test_herdr_send_key_command() {
   pass "herdr send_key normalizes the key and builds pane send-keys"
 }
 
+# --- server_ensure duplicate-server guard (Bug A) ---------------------------
+#
+# A fake herdr that records every call to $log and reports the server running
+# per SC_FAKE_HERDR_RUNNING. A `server` launch is stateful: it touches
+# $SC_FAKE_HERDR_STATE, and once that file exists `status` reports running - so
+# the headless FALLBACK path (launch, then poll to running) can be exercised.
+make_fake_herdr_argv() {  # <fakebin-dir> <log-file>
+  local fakebin=$1 log=$2
+  cat > "$fakebin/herdr" <<SH
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$log"
+if [ "\$1" = server ]; then
+  [ -n "\${SC_FAKE_HERDR_STATE:-}" ] && : > "\$SC_FAKE_HERDR_STATE"
+  exit 0
+fi
+running=\${SC_FAKE_HERDR_RUNNING:-true}
+if [ -n "\${SC_FAKE_HERDR_STATE:-}" ] && [ -f "\$SC_FAKE_HERDR_STATE" ]; then running=true; fi
+case "\$1 \$2" in
+  "status --json") printf '{"server":{"running":%s},"client":{"protocol":99,"version":"test"}}' "\$running" ;;
+  *) printf '%s' '{"result":{}}' ;;
+esac
+exit 0
+SH
+  chmod +x "$fakebin/herdr"
+}
+
+# Inside a herdr env with a status that reports running: succeed WITHOUT ever
+# launching a server (the whole point of Bug A).
+test_herdr_server_ensure_inside_running_no_spawn() {
+  command -v jq >/dev/null 2>&1 || { echo "skip: jq not found"; return 0; }
+  local d fakebin log rc
+  d=$(casedir herdr-srv-running)
+  fakebin=$(sc_fakebin "$d"); log="$d/herdr.log"; : > "$log"
+  make_fake_herdr_argv "$fakebin" "$log"
+  HERDR_SOCKET_PATH="$d/herdr.sock" HERDR_ENV=1 SC_FAKE_HERDR_RUNNING=true \
+    PATH="$fakebin:$PATH" \
+    in_fresh_backend 'sc_backend_source herdr; sc_backend_herdr_server_ensure default' >/dev/null 2>&1
+  rc=$?
+  expect_code 0 "$rc" "server_ensure must succeed inside herdr when status reports running"
+  assert_grep "status --json --session default" "$log" "server_ensure must probe status"
+  assert_no_grep "server --session" "$log" "server_ensure must NOT launch a server inside a herdr env"
+  pass "herdr server_ensure inside a herdr env returns success without spawning a server"
+}
+
+# Inside a herdr env with a status that NEVER reports running: fail loudly
+# WITHOUT ever launching a duplicate server.
+test_herdr_server_ensure_inside_never_running_fails_no_spawn() {
+  command -v jq >/dev/null 2>&1 || { echo "skip: jq not found"; return 0; }
+  local d fakebin log rc
+  d=$(casedir herdr-srv-stuck)
+  fakebin=$(sc_fakebin "$d"); log="$d/herdr.log"; : > "$log"
+  make_fake_herdr_argv "$fakebin" "$log"
+  HERDR_SOCKET_PATH="$d/herdr.sock" HERDR_ENV=1 SC_FAKE_HERDR_RUNNING=false \
+    SC_BACKEND_HERDR_SERVER_POLLS=2 SC_BACKEND_HERDR_SERVER_POLL_SLEEP=0 \
+    PATH="$fakebin:$PATH" \
+    in_fresh_backend 'sc_backend_source herdr; sc_backend_herdr_server_ensure default' >/dev/null 2>&1
+  rc=$?
+  [ "$rc" -ne 0 ] || fail "server_ensure must FAIL inside herdr when the server never reports running"
+  assert_no_grep "server --session" "$log" "server_ensure must NOT launch a duplicate server even when the probe never reports running"
+  pass "herdr server_ensure inside a herdr env fails without spawning a duplicate server"
+}
+
+# NOT inside a herdr env (headless/test path: only HERDR_SESSION set): the
+# fallback still launches the server and polls it to running, exactly as before.
+test_herdr_server_ensure_headless_launches_server() {
+  command -v jq >/dev/null 2>&1 || { echo "skip: jq not found"; return 0; }
+  local d fakebin log rc
+  d=$(casedir herdr-srv-headless)
+  fakebin=$(sc_fakebin "$d"); log="$d/herdr.log"; : > "$log"
+  make_fake_herdr_argv "$fakebin" "$log"
+  HERDR_ENV='' HERDR_SOCKET_PATH='' HERDR_SESSION=default \
+    SC_FAKE_HERDR_RUNNING=false SC_FAKE_HERDR_STATE="$d/started" \
+    SC_BACKEND_HERDR_SERVER_POLL_SLEEP=0.1 \
+    PATH="$fakebin:$PATH" \
+    in_fresh_backend 'sc_backend_source herdr; sc_backend_herdr_server_ensure default' >/dev/null 2>&1
+  rc=$?
+  expect_code 0 "$rc" "headless server_ensure must succeed after launching the server"
+  assert_grep "server --session default" "$log" "headless server_ensure must launch 'herdr server --session <session>'"
+  pass "herdr server_ensure not inside a herdr env falls back to launching the server"
+}
+
 test_env_wins
 test_config_selects
 test_config_blank_lines_ignored
@@ -311,3 +392,6 @@ test_herdr_workspace_label_no_cross_home_collision
 test_herdr_kill_command
 test_herdr_busy_state_command
 test_herdr_send_key_command
+test_herdr_server_ensure_inside_running_no_spawn
+test_herdr_server_ensure_inside_never_running_fails_no_spawn
+test_herdr_server_ensure_headless_launches_server

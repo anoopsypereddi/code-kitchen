@@ -1,4 +1,5 @@
 projects/
+worktrees/
 state/
 data/
 .DS_Store
