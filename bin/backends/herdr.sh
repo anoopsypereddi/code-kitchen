@@ -161,19 +161,67 @@ sc_backend_herdr_session() {
   printf '%s' "${HERDR_SESSION:-default}"
 }
 
+# Bounded-poll knobs for server readiness: 20 * 0.5s = a ~10s budget by default,
+# overridable so the isolated unit tests can drive the poll fast without a real
+# 10s wait. Behavior in production is unchanged from the original hardcoded loop.
+SC_BACKEND_HERDR_SERVER_POLLS=${SC_BACKEND_HERDR_SERVER_POLLS:-20}
+SC_BACKEND_HERDR_SERVER_POLL_SLEEP=${SC_BACKEND_HERDR_SERVER_POLL_SLEEP:-0.5}
+
+# sc_backend_herdr_inside_env: true (0) when souschef is itself running INSIDE a
+# herdr pane, detected from the env vars herdr injects into every pane process.
+# Prefer HERDR_SOCKET_PATH / HERDR_ENV (the reliable, always-present ones);
+# HERDR_PANE_ID / HERDR_WORKSPACE_ID / HERDR_TAB_ID are also set but pane-scoped.
+# When this is true a herdr server is DEFINITIONALLY already running - we are one
+# of its panes - so server_ensure must NEVER launch a second one. The
+# headless/test path (souschef's isolated harness, which sets only HERDR_SESSION)
+# has none of these, so it correctly reads as "not inside herdr".
+sc_backend_herdr_inside_env() {
+  [ -n "${HERDR_SOCKET_PATH:-}" ] || [ -n "${HERDR_ENV:-}" ]
+}
+
+sc_backend_herdr_server_probe() {  # <session> -> echoes "true" when running
+  sc_backend_herdr_cli "$1" status --json 2>/dev/null | jq -r '.server.running // false' 2>/dev/null
+}
+
 # sc_backend_herdr_server_ensure: start the herdr server for <session> headless
 # (no TUI client) if not already running, mirroring tmux's `tmux has-session ||
 # tmux new-session -d`. A bare socket CLI call does NOT auto-start the server, so
 # this must run before any workspace/tab/pane call. Bounded poll for running.
+#
+# Bug A guard: the `status` probe can transiently miss (a race or a momentary
+# non-answer) even when a server is definitely running. When souschef runs INSIDE
+# herdr, a server is definitionally up - we are one of its panes - so a missed
+# probe must NEVER lead us to spawn a SECOND `herdr server`. A duplicate server
+# binds the same socket (~/.config/herdr/herdr.sock) and, once it re-binds, takes
+# over as the live server, splitting cooks/panes across two servers so one session
+# becomes invisible ("spawned in a different session"). So inside a herdr env we
+# only ever RETRY the probe and, if it still never reports running, fail loudly
+# rather than launch a duplicate. Only the headless/test path (not inside herdr)
+# may fall back to launching the server, exactly as before.
+# NOTE: the firstmate reference backend (github.com/kunchenguid/firstmate
+# bin/backends/herdr.sh) still has the un-guarded version of this bug.
 sc_backend_herdr_server_ensure() {  # <session>
   local session=$1 running i
-  running=$(sc_backend_herdr_cli "$session" status --json 2>/dev/null | jq -r '.server.running // false' 2>/dev/null)
+  running=$(sc_backend_herdr_server_probe "$session")
   [ "$running" = "true" ] && return 0
+  if sc_backend_herdr_inside_env; then
+    # Inside herdr: the server is already up; the probe just missed. Retry within
+    # the same bounded budget, but NEVER spawn - a duplicate server is Bug A.
+    for i in $(seq 1 "$SC_BACKEND_HERDR_SERVER_POLLS"); do
+      sleep "$SC_BACKEND_HERDR_SERVER_POLL_SLEEP"
+      running=$(sc_backend_herdr_server_probe "$session")
+      [ "$running" = "true" ] && return 0
+    done
+    echo "error: running inside a herdr environment (HERDR_SOCKET_PATH=${HERDR_SOCKET_PATH:-unset}) but 'herdr status' for session '$session' never reported the server running; refusing to launch a duplicate herdr server" >&2
+    return 1
+  fi
+  # Not inside herdr (headless/test path, e.g. only HERDR_SESSION set): safe to
+  # start the server headless, exactly as before.
   ( sc_backend_herdr_cli "$session" server >/dev/null 2>&1 & ) || return 1
-  for i in $(seq 1 20); do
-    running=$(sc_backend_herdr_cli "$session" status --json 2>/dev/null | jq -r '.server.running // false' 2>/dev/null)
+  for i in $(seq 1 "$SC_BACKEND_HERDR_SERVER_POLLS"); do
+    running=$(sc_backend_herdr_server_probe "$session")
     [ "$running" = "true" ] && return 0
-    sleep 0.5
+    sleep "$SC_BACKEND_HERDR_SERVER_POLL_SLEEP"
   done
   echo "error: herdr server for session '$session' did not report running within 10s" >&2
   return 1

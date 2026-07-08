@@ -165,6 +165,27 @@ test_deterministic_path_not_scraped() {
   pass "sc-worktree: the worktree path is returned deterministically, never scraped from the cwd"
 }
 
+test_default_root_is_sc_home_relative() {
+  local primary path home
+  home="$TMP_ROOT/homedef/home"
+  mkdir -p "$home"
+  primary=$(make_primary "$TMP_ROOT/homedef/primary")
+  # No SC_WORKTREE_ROOT override: the default root must be $SC_HOME/worktrees, a
+  # worktrees/ dir inside the souschef home (sibling of projects/), so the whole
+  # workspace lives under one roof.
+  path=$( SC_HOME="$home" SC_WORKTREE_ROOT='' \
+            "$WT_BIN" get --lease --lease-holder home-def --repo "$primary" ) \
+    || fail "get with the default (SC_HOME-relative) root failed"
+  case "$path" in
+    "$home/worktrees"/*) : ;;
+    *) fail "default worktree root is not \$SC_HOME/worktrees: $path" ;;
+  esac
+  # It is still a genuinely isolated worktree of the primary, outside it.
+  [ "$path" != "$primary" ] || fail "default-root worktree is not isolated from the primary"
+  SC_HOME="$home" SC_WORKTREE_ROOT='' "$WT_BIN" return --force "$path" >/dev/null 2>&1 || true
+  pass "sc-worktree: default worktree root is \$SC_HOME/worktrees when SC_WORKTREE_ROOT is unset"
+}
+
 test_base_is_latest_default() {
   local primary p1 head1 c2 p2 head2
   primary=$(make_primary "$TMP_ROOT/base/primary")
@@ -187,4 +208,5 @@ test_prune_reclaims_orphans
 test_concurrent_gets
 test_return_kills_processes
 test_deterministic_path_not_scraped
+test_default_root_is_sc_home_relative
 test_base_is_latest_default
