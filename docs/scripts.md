@@ -23,6 +23,16 @@ Each file also starts with a short header comment.
 | `sc-watch.sh`            | Singleton-safe one-shot pass; blocks until expediting work is due, queues it durably, then exits with one reason line |
 | `sc-supervise-daemon.sh` | Presence-gated sub-expediter for walk-away (`/afk`) expediting: wraps `sc-watch.sh`, self-handles routine wakes in bash, and escalates only Chef-relevant events as one verified, batched, single-line digest prefixed with a sentinel marker |
 | `sc-tangle-lib.sh`       | Shared default-branch resolution and primary-checkout tangle classification sourced by bootstrap and guard         |
+| `sc-turnend-guard.sh`    | Primary-scoped turn-end (Stop) hook: BLOCKS the turn (exit 2) when a task is in flight and no live watcher holds the home lock; loop-guarded to one forced continuation per turn; inert in cook worktrees (see [supervision-hooks.md](supervision-hooks.md)) |
+| `sc-turnend-guard-grok.sh` | Grok passive-Stop adapter for `sc-turnend-guard.sh`: forces one `grok --resume` when the shared predicate says the turn would end blind |
+| `sc-continuity-pretool-check.sh` | Claude watcher-continuity PreToolUse gate: while blind, denies fleet-mutating `bin/sc-*.sh` and allows only wake-drain / watch-arm / literal teardown |
+| `sc-continuity-command-policy.mjs` | Classifier owner for the continuity gate: identifies executed fleet scripts and splits recovery commands from everything else |
+| `sc-arm-pretool-check.sh` | PreToolUse transport for the watcher-arm policy; renders per-harness deny objects, fails open on missing jq/node |
+| `sc-arm-command-policy.mjs` | Sole owner of Souschef shell command classification (Lexer/splitProgram/commandPosition); rejects the `&`/nohup/pipeline/bundled arm mistake and direct `sc-watch.sh`/broad kill |
+| `sc-cd-pretool-check.sh` | Primary-scoped cd-guard PreToolUse transport; blocks a persistent top-level `cd` into a clone, inert in cook worktrees |
+| `sc-cd-command-policy.mjs` | cd-guard decision owner; reuses the `sc-arm-command-policy.mjs` shell classifier |
+| `sc-supervision-lib.sh`  | Shared "supervision missing" predicate (in-flight count + beacon freshness) sourced by the turn-end guard and continuity gate |
+| `sc-primary-scope-lib.sh` | Shared marker-or-plain-checkout predicate scoping the hooks to a real primary home (main or marked station chef), inert in linked worktrees |
 | `sc-ff-lib.sh`           | Shared guarded fast-forward helper for `/updatesouschef` origin pulls and no-fetch local station chef syncs       |
 | `sc-wake-drain.sh`       | Atomically drain queued pass wakes before handling expediting work, then run the pass-liveness guard               |
 | `sc-wake-lib.sh`         | Shared durable wake queue and portable lock helpers sourced by the pass, drain, arm, guard, and daemon            |

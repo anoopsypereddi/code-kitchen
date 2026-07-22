@@ -47,6 +47,47 @@ sc_path_age() {
   echo $(( $(date +%s) - m ))
 }
 
+# sc_watcher_lock_matches_pid <state-dir> <watcher-path> <pid> [home]
+# True when the watch.lock names this home, this watcher path, and a stored
+# pid-identity that still matches the live pid's identity. This is the
+# identity-matched liveness check the turn-end guard and continuity gate use to
+# decide a watcher is genuinely THIS home's live pass, not a reused pid or a
+# sibling home's watcher. sc-watch.sh writes sc-home/watcher-path/pid-identity
+# into the lock at startup; the field names must stay in sync with it.
+sc_watcher_lock_matches_pid() {
+  local state=$1 watch_path=$2 pid=$3 home=${4:-$SC_HOME} lockdir lock_home lock_path lock_identity current_identity
+  lockdir="$state/.watch.lock"
+  lock_home=$(cat "$lockdir/sc-home" 2>/dev/null || true)
+  lock_path=$(cat "$lockdir/watcher-path" 2>/dev/null || true)
+  lock_identity=$(cat "$lockdir/pid-identity" 2>/dev/null || true)
+  [ "$lock_home" = "$home" ] || return 1
+  [ "$lock_path" = "$watch_path" ] || return 1
+  [ -n "$lock_identity" ] || return 1
+  current_identity=$(sc_pid_identity "$pid") || return 1
+  [ "$current_identity" = "$lock_identity" ]
+}
+
+# sc_watcher_healthy <state-dir> <watcher-path> [grace] [home]
+# True when the lock names a live, identity-matched watcher for this home AND its
+# liveness beacon is fresher than the grace window. On success SC_WATCHER_HEALTHY_PID
+# holds the confirmed pid. This is the authoritative "a real pass is alive" check;
+# a fresh beacon alone is not enough (a dead pid can leave a recent beacon).
+SC_WATCHER_HEALTHY_PID=
+sc_watcher_healthy() {
+  local state=$1 watch_path=$2 grace=${3:-${SC_GUARD_GRACE:-300}} home=${4:-$SC_HOME} lockdir beat pid age
+  SC_WATCHER_HEALTHY_PID=
+  lockdir="$state/.watch.lock"
+  beat="$state/.last-watcher-beat"
+  pid=$(cat "$lockdir/pid" 2>/dev/null || true)
+  sc_pid_alive "$pid" || return 1
+  sc_watcher_lock_matches_pid "$state" "$watch_path" "$pid" "$home" || return 1
+  age=$(sc_path_age "$beat")
+  [ "$age" -lt "$grace" ] || return 1
+  # shellcheck disable=SC2034 # Read by callers after sc_watcher_healthy returns.
+  SC_WATCHER_HEALTHY_PID=$pid
+  return 0
+}
+
 sc_lock_clean_known_files() {
   local lockdir=$1
   rm -f \

@@ -485,6 +485,19 @@ The grace window keeps normal handling (pass briefly down between a wake and its
 If a guard warning says queued wakes are pending, drain them before doing anything else.
 If a guard warning says pass liveness is stale, arm `bin/sc-watch-arm.sh` after draining any queued wakes.
 
+**The blind turn is a structural impossibility, not just a discipline rule.**
+`sc-guard.sh` is pull-based: it only warns when Souschef happens to run a wrapped script, so a turn that ends blind and then runs nothing is exactly the gap it cannot catch.
+That gap is now closed by primary-side, harness-native hooks that fire without Souschef remembering to run anything, belt-and-suspenders WITH (never replacing) the pull-based guard:
+
+- A **turn-end (Stop) guard** (`bin/sc-turnend-guard.sh`) that BLOCKS the turn (exit 2) when a task is in flight and no live, identity-matched watcher holds this home's lock with a fresh beacon; it forces one continuation so the turn cannot end blind. A `stop_hook_active` loop guard bounds it to at most one forced continuation per turn, so the session is never wedged un-endable.
+- A **continuity PreToolUse gate** (`bin/sc-continuity-pretool-check.sh`) that, while blind, BLOCKS the next fleet-mutating `bin/sc-*.sh` command and allows only the recovery trio - `sc-wake-drain.sh`, `sc-watch-arm.sh`, and the literal `sc-teardown.sh` - so the fleet cannot be advanced before supervision is restored.
+- A **watcher-arm command policy** (`bin/sc-arm-command-policy.mjs` via `bin/sc-arm-pretool-check.sh`) that rejects the exact `&`/`nohup`/pipeline/redirection/bundled fire-and-forget arm mistake (`&` -> `watcher-background`) and running `sc-watch.sh` directly, so the re-arm can only be a standalone harness-tracked background call.
+- A **cd-guard** (`bin/sc-cd-command-policy.mjs` via `bin/sc-cd-pretool-check.sh`) that blocks a persistent top-level `cd`/`pushd`/`popd` that would relocate the primary shell into a project clone.
+
+These reuse the same beacon/grace source of truth as `sc-guard.sh` (`state/.last-watcher-beat`, `SC_GUARD_GRACE`) and are wired per harness under `.claude/settings.json`, `.codex/hooks.json`, `.grok/hooks/`, `.opencode/plugins/`, and `.pi/extensions/` (grok's Stop hook is passive, so `bin/sc-turnend-guard-grok.sh` forces one `grok --resume` instead of blocking).
+Every one is scoped to a real PRIMARY checkout - the main home or a genuinely-marked station chef home - and is completely inert inside a cook's linked worktree, so it never interferes with a cook.
+Full contract and per-harness mechanics live in `docs/supervision-hooks.md`.
+
 `sc-guard.sh` carries a second, independent alarm in the same bordered ●-marked style: the **worktree-tangle** guard.
 Souschef is a self-hosted git repo - it worktrees itself, so the primary checkout (the repo root, `SC_ROOT`) and every cook worktree and station chef home are linked worktrees of one repo - and the primary must stay on its default branch.
 If a cook sent to work Souschef-on-itself branches or commits in the primary instead of its own isolated worktree, the primary is stranded on a feature branch (the failure this guards against); the guard names the offending branch and prints the non-destructive restore (`git -C <root> checkout <default>`), so the tangle surfaces on the very next brigade action.
