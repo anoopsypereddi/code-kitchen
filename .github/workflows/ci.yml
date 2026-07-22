@@ -15,7 +15,25 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - run: shellcheck bin/*.sh bin/backends/*.sh tests/*.sh setup.sh
+      - name: Install pinned ShellCheck
+        run: |
+          set -eu
+          bin/sc-install-shellcheck.sh "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      # Single owner of the lint definition (file set + config + version). Do not
+      # re-spell the shellcheck command here; keep CI and local runs on it.
+      - run: bin/sc-lint.sh
+
+  # Deterministic proof that the serial suite runs every tests/*.test.sh with
+  # none silently dropped: the executed set (bin/sc-test-run.sh) must equal the
+  # on-disk inventory.
+  test-coverage:
+    name: Test coverage guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Prove executed set == inventory
+        run: bin/sc-test-run.sh --check-coverage
 
   parse:
     name: Parse scripts under bash 3.2 (macOS)
@@ -55,11 +73,52 @@ jobs:
             exit 1
           }
           tmux -V
-      - run: |
+      # Runs the same executed set the coverage guard proves complete.
+      - run: bin/sc-test-run.sh
+
+  macos-stock-bash:
+    name: Behavior tests under stock macOS bash 3.2.57
+    # macOS runners ship stock bash 3.2.57 at /bin/bash. This lane runs actual
+    # behavior tests (not just `bash -n`) under it, asserting exact expected
+    # counts, so a bash-3.2 runtime regression - not only a parse error - fails
+    # CI. The PATH is stock macOS only (no Homebrew), so `env bash` in every
+    # subprocess also resolves to 3.2.57, and the tests picked here need only
+    # bash, git, and coreutils (no tmux/herdr), which stock macOS provides.
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - name: Run portable behavior tests under bash 3.2.57
+        shell: /bin/bash {0}
+        env:
+          PATH: /bin:/usr/bin:/usr/sbin:/sbin
+        run: |
           set -eu
-          for test_script in tests/*.test.sh; do
-            "$test_script"
-          done
+          case "$BASH_VERSION" in
+            3.2.57*) ;;
+            *) echo "::error::expected stock macOS bash 3.2.57, got $BASH_VERSION"; exit 1 ;;
+          esac
+          /bin/bash --version | head -1
+
+          # Each entry is "<test> <expected-ok-count>". Bump a count here when a
+          # test's case count legitimately changes; a drift fails this lane and
+          # forces a deliberate update rather than a silent behavior change.
+          run_counted() {
+            local test=$1 expected=$2 output count
+            output=$(/bin/bash "$test")
+            printf '%s\n' "$output"
+            count=$(printf '%s\n' "$output" | grep -c '^ok - ')
+            [ "$count" -eq "$expected" ] || {
+              echo "::error::$test: expected $expected passing checks, got $count"
+              exit 1
+            }
+            echo "$test: $count checks OK under bash $BASH_VERSION"
+          }
+
+          run_counted tests/sc-worktree.test.sh 8
+          run_counted tests/sc-wake-queue.test.sh 7
+          run_counted tests/sc-watcher-lock.test.sh 20
+          run_counted tests/sc-update.test.sh 9
 
   invariants:
     name: Repo invariants
