@@ -106,3 +106,40 @@ sc_backend_tmux_send_literal() {  # <target> <text>
 sc_backend_tmux_kill() {  # <target>
   tmux kill-window -t "$1" 2>/dev/null || true
 }
+
+# sc_backend_tmux_current_command: <target>'s live foreground process name -
+# tmux's own `#{pane_current_command}`, already resolved from the pane's pty
+# foreground process group. A harness invoked interactively stays the reported
+# command even while it shells out to subcommands that do not take over the pty;
+# the value reverts to the shell's own name only once the foreground command
+# actually exits. Empty on any tmux error.
+sc_backend_tmux_current_command() {  # <target>
+  tmux display-message -p -t "$1" '#{pane_current_command}' 2>/dev/null
+}
+
+# sc_backend_tmux_agent_alive: CONFIDENT liveness of a live harness-agent PROCESS
+# in <target>'s pane, distinct from sc_backend_target_exists's PRESENCE-only
+# check (a pane that still exists but sits at a bare idle shell passes THAT check
+# as "alive" - the secondmate-liveness gap sc-bootstrap.sh's session-start sweep
+# closes). Prints one of:
+#   alive   - the foreground command is one of the verified harness binaries that
+#             run as their own process name (claude, codex, opencode).
+#   dead    - the foreground command is a bare login/interactive shell: nothing
+#             is running in the pane, so a prior agent process has exited.
+#   unknown - anything else, INCLUDING a bare "node"/"python" interpreter (pi's
+#             launcher execs into a generic "node" with no reliable way to
+#             attribute it back to pi from outside the pane), or an unreadable
+#             pane. Callers must NEVER treat unknown as a confirmed-dead signal:
+#             the liveness sweep gates a respawn on `dead` only, so a momentary
+#             read glitch can never duplicate a live supervisor.
+sc_backend_tmux_agent_alive() {  # <target>
+  local target=$1 comm
+  comm=$(sc_backend_tmux_current_command "$target") || { printf 'unknown'; return 0; }
+  comm=${comm#-}
+  case "$comm" in
+    '') printf 'unknown' ;;
+    *claude*|*codex*|*opencode*) printf 'alive' ;;
+    zsh|bash|sh|dash|ash|ksh|mksh|tcsh|csh|fish) printf 'dead' ;;
+    *) printf 'unknown' ;;
+  esac
+}

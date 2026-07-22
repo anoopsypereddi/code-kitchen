@@ -148,24 +148,32 @@ window_held_warm() {
 }
 
 # Has the window's cook already delivered and gone idle awaiting souschef? A cook
-# whose last status line is a terminal/awaiting state - done (covers PR-opened /
+# whose CURRENT state is a terminal/awaiting one - done (covers PR-opened /
 # awaiting-merge and report-written, all of which are `done:` lines), blocked, or
-# needs-decision - has already woken souschef via that status signal and is now
-# legitimately parked. Re-flagging its idle pane as stale is pure noise (the big
-# offender was a ship cook sitting on an open, green PR awaiting merge). The
-# heartbeat still reviews it, and a cook resumes work by writing fresh pane output
-# (busy signature) before its next status, so genuine mid-work cooks still trip
-# stale detection.
+# needs-decision(parked) - has already woken souschef via that status signal and
+# is now legitimately parked. Re-flagging its idle pane as stale is pure noise
+# (the big offender was a ship cook sitting on an open, green PR awaiting merge).
+#
+# Current state comes from sc-crew-state.sh, NOT a bare `tail -1` of the status
+# log: the log is an append-only event stream that goes stale the moment a cook
+# silently resumes after souschef answers a needs-decision. sc-crew-state.sh
+# reconciles that stale terminal line against the pane's live busy-state, so a
+# RESUMED cook derives `working` (superseding the terminal line) and is no longer
+# skipped here - its pane, now busy, still suppresses a spurious stale wake, and
+# once it idles without a fresh status line a genuine wedge is caught. A
+# genuinely parked cook (idle pane, terminal log) still derives parked/done/
+# blocked and is skipped exactly as before. The heartbeat still reviews every
+# parked cook regardless.
 window_delivered_idle() {
-  local w=$1 meta mw id last
+  local w=$1 meta mw id state
   for meta in "$STATE"/*.meta; do
     [ -e "$meta" ] || continue
     mw=$(grep '^window=' "$meta" | cut -d= -f2- || true)
     [ "$mw" = "$w" ] || continue
     id=$(basename "$meta" .meta)
-    last=$(grep -v '^[[:space:]]*$' "$STATE/$id.status" 2>/dev/null | tail -1)
-    case "$last" in
-      done:*|blocked:*|needs-decision:*) return 0 ;;
+    state=$("$SCRIPT_DIR/sc-crew-state.sh" "$id" 2>/dev/null | sed -n 's/^state: \([a-z-]*\).*/\1/p')
+    case "$state" in
+      parked|done|blocked) return 0 ;;
     esac
     return 1
   done

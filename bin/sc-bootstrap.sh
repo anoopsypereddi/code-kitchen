@@ -7,8 +7,15 @@
 #                 "CREW_HARNESS_OVERRIDE: <name>", "FLEET_SYNC: <repo>: skipped: <reason>",
 #                 "TANGLE: <remediation>",
 #                 "SECONDMATE_SYNC: secondmate <id>: skipped: <reason>",
+#                 "SECONDMATE_LIVENESS: secondmate <id>: <respawn failed|skipped>: <reason>",
 #                 "CREW_DISPATCH: invalid config/crew-dispatch.json - <reason>",
 #                 "NUDGE_SECONDMATES: <window-targets...>".
+#          A SECONDMATE_LIVENESS line reports a session-start agent-process
+#          liveness probe of a live secondmate that either could not be respawned
+#          after a confident-dead reading, or was left untouched because the probe
+#          was inconclusive (unknown -> never respawned, to avoid duplicating a
+#          live supervisor). A confidently-dead secondmate that respawns cleanly
+#          stays silent.
 #          A CREW_DISPATCH line means config/crew-dispatch.json exists but is
 #          malformed (bad JSON, an unverified harness, a bad profile, an unknown
 #          select, or an effort a harness cannot accept); dispatch stays inert
@@ -43,6 +50,8 @@ STATE="${SC_STATE_OVERRIDE:-$SC_HOME/state}"
 . "$SCRIPT_DIR/sc-tangle-lib.sh"
 # shellcheck source=bin/sc-ff-lib.sh
 . "$SCRIPT_DIR/sc-ff-lib.sh"
+# shellcheck source=bin/sc-backend.sh
+. "$SCRIPT_DIR/sc-backend.sh"
 
 fleet_sync() {
   [ -x "$SC_ROOT/bin/sc-fleet-sync.sh" ] || return 0
@@ -115,6 +124,69 @@ secondmate_sync() {
   done < "$tmp"
   rm -f "$tmp"
   [ -n "$FF_NUDGE_WINDOWS" ] && echo "NUDGE_SECONDMATES:$FF_NUDGE_WINDOWS"
+  return 0
+}
+
+secondmate_liveness_sweep() {
+  # Idempotent secondmate liveness guarantee - SESSION START ONLY. A secondmate
+  # agent that has exited leaves its backend endpoint alive as a bare shell; the
+  # existing presence-only reads (sc_backend_target_exists) report that shell as
+  # alive, so recovery never respawns it, and the watcher deliberately exempts
+  # secondmates from stale-pane detection (an idle secondmate pane is healthy by
+  # design). This sweep closes the gap: for every LIVE secondmate meta
+  # (kind=secondmate with a recorded window=), run the deeper agent-process probe
+  # (sc_backend_agent_alive) and act only on a CONFIDENT verdict:
+  #   alive   - no-op.
+  #   dead    - kill the stale endpoint first (best-effort) then respawn via the
+  #             existing recovery path (sc-spawn.sh <id> --secondmate).
+  #   unknown - NEVER acted on. A false-dead reading would spin up a DUPLICATE
+  #             agent (two supervisors in one home); a false-alive reading merely
+  #             leaves the bug unfixed for one more sweep. The worse direction is
+  #             guarded by never treating anything less than a confident dead
+  #             reading as license to respawn.
+  # A `dead` verdict is trusted only for a VERIFIED harness (claude/codex/opencode/
+  # pi); for any other recorded harness a `dead` reading is downgraded to unknown,
+  # so an unverified adapter can never license a respawn.
+  # A meta with no recorded window= is left to the existing "meta with no window"
+  # recovery path (AGENTS.md section 5); there is no endpoint here to probe.
+  # Naturally scoped to the primary: a secondmate's own state/ never holds
+  # kind=secondmate metas (secondmates never spawn secondmates), so this sweep is
+  # a silent no-op there. Scope is session start only; a secondmate dying
+  # mid-session is a harder follow-on (a periodic liveness beacon) out of scope here.
+  [ "${SC_SKIP_SECONDMATE_LIVENESS:-}" = 1 ] && return 0
+  [ -d "$STATE" ] || return 0
+  local meta id window harness backend target verdict out
+  for meta in "$STATE"/*.meta; do
+    [ -f "$meta" ] || continue
+    grep -q '^kind=secondmate' "$meta" 2>/dev/null || continue
+    id=$(basename "$meta" .meta)
+    window=$(sc_meta_get "$meta" window)
+    [ -n "$window" ] || continue
+    harness=$(sc_meta_get "$meta" harness)
+    backend=$(sc_backend_of_meta "$meta")
+    target=$(sc_backend_target_of_meta "$meta")
+    [ -n "$target" ] || target="$window"
+    verdict=$(sc_backend_agent_alive "$backend" "$target" 2>/dev/null) || verdict=unknown
+    [ -n "$verdict" ] || verdict=unknown
+    case "$harness" in
+      claude|codex|opencode|pi) ;;
+      *) [ "$verdict" = dead ] && verdict=unknown ;;
+    esac
+    case "$verdict" in
+      alive) ;;
+      dead)
+        sc_backend_kill "$backend" "$target" 2>/dev/null || true
+        if out=$(SC_SPAWN_NO_GUARD=1 "$SC_ROOT/bin/sc-spawn.sh" "$id" --secondmate 2>&1); then
+          :
+        else
+          echo "SECONDMATE_LIVENESS: secondmate $id: respawn failed: $(first_line "$out")"
+        fi
+        ;;
+      *)
+        echo "SECONDMATE_LIVENESS: secondmate $id: skipped: liveness probe inconclusive (backend=$backend)"
+        ;;
+    esac
+  done
   return 0
 }
 
@@ -266,5 +338,6 @@ crew=
 [ -n "$crew" ] && [ "$crew" != "default" ] && echo "CREW_HARNESS_OVERRIDE: $crew"
 crew_dispatch_validate
 secondmate_sync
+secondmate_liveness_sweep
 fleet_sync
 exit 0

@@ -404,3 +404,27 @@ sc_backend_target_exists() {  # <backend> <target>
       ;;
   esac
 }
+
+# sc_backend_agent_alive: CONFIDENT liveness of a live harness-agent PROCESS
+# under <target>, distinct from sc_backend_target_exists's PRESENCE-only check.
+# A secondmate agent that has exited leaves its backend endpoint alive as a bare
+# shell; sc_backend_target_exists reports that shell as "alive" because the pane
+# itself still exists, which is exactly the gap sc-bootstrap.sh's session-start
+# secondmate-liveness sweep exists to close. Prints one of:
+#   alive   - a real agent process is confirmed running.
+#   dead    - CONFIDENTLY not an agent: a bare shell (tmux) or a
+#             structurally-gone/no-agent-registered pane (herdr).
+#   unknown - anything ambiguous, unreadable, or an unsupported backend.
+# Scoped to the two spawn-capable backends with a verified classifier (tmux and
+# herdr); any other backend reports unknown. Callers must NEVER license an
+# action from unknown alone - the liveness sweep gates a respawn on `dead` only,
+# precisely so a momentary read glitch can never duplicate a live supervisor.
+sc_backend_agent_alive() {  # <backend> <target>
+  local backend=$1 target=$2
+  sc_backend_source "$backend" 2>/dev/null || { printf 'unknown'; return 0; }
+  case "$backend" in
+    tmux) sc_backend_tmux_agent_alive "$target" ;;
+    herdr) sc_backend_herdr_agent_alive "$target" ;;
+    *) printf 'unknown' ;;
+  esac
+}
