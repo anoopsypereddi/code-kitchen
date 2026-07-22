@@ -11,8 +11,12 @@
 # busy/idle/blocked state herdr reports natively.
 #
 # Adapted from the firstmate reference backend (github.com/kunchenguid/firstmate,
-# bin/backends/herdr.sh), verified there against real herdr v0.7.1 / protocol
-# 14. Herdr is a session provider ONLY: the worktree provider stays
+# bin/backends/herdr.sh), verified there against real herdr through v0.7.4 /
+# protocol 16 (originally v0.7.1 / protocol 14; the CLI surface this adapter
+# uses is unchanged across that range, so protocol 14 stays the supported
+# minimum for backward compatibility while 16 is the newest verified build -
+# install a pinned, verified build with bin/sc-install-herdr.sh).
+# Herdr is a session provider ONLY: the worktree provider stays
 # bin/sc-worktree.sh, exactly like tmux. Sourced only through bin/sc-backend.sh's
 # sc_backend_source in normal operation; the unit tests source it directly, so
 # the SC_HOME fallback below keeps that path sane without sc-backend.sh's preamble.
@@ -47,7 +51,14 @@ SC_BACKEND_HERDR_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SC_ROOT="${SC_ROOT_OVERRIDE:-${SC_ROOT:-$SC_BACKEND_HERDR_ROOT}}"
 SC_HOME="${SC_HOME:-${SC_ROOT_OVERRIDE:-$SC_ROOT}}"
 
+# Supported protocol range. The CLI surface this adapter drives is stable from
+# protocol 14 (herdr 0.7.1) through protocol 16 (herdr 0.7.4, the newest build
+# firstmate verified), so 14 stays the supported MINIMUM for backward
+# compatibility - an older-but-still-14 client keeps working - while
+# SC_BACKEND_HERDR_VERIFIED_PROTOCOL records the newest verified build so the
+# pin in bin/sc-install-herdr.sh and this adapter agree on one number.
 SC_BACKEND_HERDR_MIN_PROTOCOL=${SC_BACKEND_HERDR_MIN_PROTOCOL:-14}
+SC_BACKEND_HERDR_VERIFIED_PROTOCOL=${SC_BACKEND_HERDR_VERIFIED_PROTOCOL:-16}
 # .sc-secondmate-home is written by bin/sc-home-seed.sh (AGENTS.md section 6) at
 # a seeded secondmate home's root, containing exactly that secondmate's id. The
 # primary souschef home never carries this marker.
@@ -142,6 +153,13 @@ sc_backend_herdr_version_check() {
   if [ "$protocol" -lt "$SC_BACKEND_HERDR_MIN_PROTOCOL" ]; then
     echo "error: herdr protocol $protocol (version ${version:-unknown}) is older than the verified minimum $SC_BACKEND_HERDR_MIN_PROTOCOL; update herdr before using backend=herdr" >&2
     return 1
+  fi
+  # A protocol NEWER than what we verified is allowed (never fatal - the CLI
+  # surface has been forward-stable), but flag it once so a herdr release that
+  # moves past our verified build is visible rather than silently assumed good.
+  # Suppressed on the quiet readiness probe, which redirects stderr.
+  if [ "$protocol" -gt "$SC_BACKEND_HERDR_VERIFIED_PROTOCOL" ]; then
+    echo "notice: herdr protocol $protocol (version ${version:-unknown}) is newer than the newest verified build (protocol $SC_BACKEND_HERDR_VERIFIED_PROTOCOL); proceeding, but re-verify with bin/sc-install-herdr.sh if the backend misbehaves" >&2
   fi
   return 0
 }
