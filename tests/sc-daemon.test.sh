@@ -683,6 +683,128 @@ test_fm_send_exits_nonzero_on_initial_send_failure() {
   pass "sc-send exits non-zero when initial text send fails"
 }
 
+# --- wedge-alarm active-alert fan-out ---------------------------------------
+# These exercise the backend-independent alert (osascript/herdr/command:) added
+# alongside the durable marker + tmux flash. Every notifier routes through the
+# SC_WEDGE_ALARM_EXEC recorder seam installed by wake-helpers.sh, so no test can
+# post a real notification; SC_WEDGE_ALARM_LOG captures "<channel>\t<summary>".
+
+test_wedge_alarm_library_mode_defaults_to_discard() {
+  # Sourcing the daemon (the only way a test reaches these functions) defaults
+  # SC_WEDGE_ALARM_EXEC to "discard" so a sourced context cannot fire a real
+  # notification even without the wake-helpers recorder.
+  local out
+  # shellcheck disable=SC2016  # $1 must expand in the child, not here
+  out=$(env -u SC_WEDGE_ALARM_EXEC bash -c '. "$1"; printf "%s" "${SC_WEDGE_ALARM_EXEC:-UNSET}"' _ "$DAEMON")
+  [ "$out" = discard ] || fail "sourced daemon left SC_WEDGE_ALARM_EXEC as '$out', not discard"
+  pass "library mode: sourcing the daemon defaults SC_WEDGE_ALARM_EXEC to discard"
+}
+
+test_wedge_alarm_osascript_channel_selected() {
+  local dir log
+  dir=$(make_supercase wedge-osascript); log="$dir/alert.log"
+  SC_WEDGE_ALARM_LOG="$log" SC_WEDGE_ALARM_CHANNEL=osascript \
+    wedge_alarm_notify "away-mode escalations WEDGED 600s undelivered - see /s/.marker" "/s/.marker"
+  grep -qF $'osascript\taway-mode escalations WEDGED 600s undelivered - see /s/.marker' "$log" \
+    || fail "osascript channel not selected with summary: $(cat "$log" 2>/dev/null)"
+  pass "wedge alarm selects the osascript channel and propagates the summary"
+}
+
+test_wedge_alarm_herdr_channel_selected() {
+  local dir log
+  dir=$(make_supercase wedge-herdr); log="$dir/alert.log"
+  SC_WEDGE_ALARM_LOG="$log" SC_WEDGE_ALARM_CHANNEL=herdr \
+    wedge_alarm_notify "away-mode escalations WEDGED 800s undelivered - see /s/.marker" "/s/.marker"
+  grep -qF $'herdr\taway-mode escalations WEDGED 800s' "$log" \
+    || fail "herdr channel not selected: $(cat "$log" 2>/dev/null)"
+  pass "wedge alarm selects the herdr channel"
+}
+
+test_wedge_alarm_multiple_channels_all_fire() {
+  local dir log
+  dir=$(make_supercase wedge-multi); log="$dir/alert.log"
+  SC_WEDGE_ALARM_LOG="$log" SC_WEDGE_ALARM_CHANNEL=$'osascript\nherdr' \
+    wedge_alarm_notify "away-mode WEDGED 900s" "/s/.marker"
+  grep -q $'^osascript\t' "$log" || fail "osascript did not fire in a multi-channel config"
+  grep -q $'^herdr\t' "$log" || fail "herdr did not fire in a multi-channel config"
+  pass "wedge alarm fans out to every configured channel"
+}
+
+test_wedge_alarm_off_kill_switch_fires_nothing() {
+  local dir log
+  dir=$(make_supercase wedge-off); log="$dir/alert.log"; : > "$log"
+  SC_WEDGE_ALARM_LOG="$log" SC_WEDGE_ALARM_CHANNEL=$'osascript\noff\nherdr' \
+    wedge_alarm_notify "away-mode WEDGED 900s" "/s/.marker"
+  [ ! -s "$log" ] || fail "a positioned 'off' directive did not disable every channel: $(cat "$log")"
+  pass "wedge alarm 'off' is a position-independent kill switch"
+}
+
+test_wedge_alarm_channel_failure_degrades_silently() {
+  # A failing channel must never abort the fan-out or the daemon: notify still
+  # returns 0 and later channels still fire.
+  local dir log rc
+  dir=$(make_supercase wedge-degrade); log="$dir/alert.log"
+  SC_WEDGE_ALARM_LOG="$log" SC_WEDGE_ALARM_FAIL=osascript \
+    SC_WEDGE_ALARM_CHANNEL=$'osascript\nherdr' \
+    wedge_alarm_notify "away-mode WEDGED 900s" "/s/.marker"
+  rc=$?
+  [ "$rc" -eq 0 ] || fail "a failing channel made wedge_alarm_notify return non-zero ($rc)"
+  grep -q $'^herdr\t' "$log" || fail "a failing earlier channel starved the later channel"
+  pass "wedge alarm degrades silently on a channel failure and keeps fanning out"
+}
+
+test_wedge_alarm_command_channel_receives_summary() {
+  # With the seam unset, the command: channel really dispatches sh -c, passing
+  # the summary on $1. Use a safe file-writing command (no notification).
+  local dir out chan
+  dir=$(make_supercase wedge-command); out="$dir/cmd.out"
+  chan="command:printf '%s' \"\$1\" > $out"
+  SC_WEDGE_ALARM_EXEC='' SC_WEDGE_ALARM_CHANNEL="$chan" \
+    wedge_alarm_notify "away-mode WEDGED 900s" "/s/.marker"
+  [ "$(cat "$out" 2>/dev/null)" = "away-mode WEDGED 900s" ] \
+    || fail "command channel did not receive the summary on \$1: $(cat "$out" 2>/dev/null)"
+  pass "wedge alarm command channel dispatches with the summary on \$1"
+}
+
+test_wedge_alarm_command_failure_hides_command() {
+  # A failing command channel logs without leaking the configured command text.
+  local dir daemon_log secret rc
+  dir=$(make_supercase wedge-cmd-secret); daemon_log="$dir/daemon.log"
+  secret="SUPERSECRET_TOPIC"
+  LOG="$daemon_log" SC_WEDGE_ALARM_EXEC='' SC_WEDGE_ALARM_CHANNEL="command:exit 73 # $secret" \
+    wedge_alarm_notify "away-mode WEDGED 900s" "/s/.marker"
+  rc=$?
+  [ "$rc" -eq 0 ] || fail "a failed command channel made wedge_alarm_notify return non-zero ($rc)"
+  ! grep -qF "$secret" "$daemon_log" 2>/dev/null \
+    || fail "a failing command channel leaked the configured command into the log"
+  pass "wedge alarm hides a failing command channel's configuration"
+}
+
+test_wedge_alarm_rate_limited_once_per_window() {
+  # inject_wedge_alarm must not re-notify within a max-defer window. Two calls
+  # close together fire the active alert only once (the marker + WEDGE_ALARM_LAST
+  # epoch throttle). The first call writes a fresh marker (aged 0 < max-defer),
+  # so pre-age it to force the first call through.
+  local dir state log
+  dir=$(make_supercase wedge-ratelimit); state="$dir/state"; log="$dir/alert.log"
+  mkdir -p "$state"
+  escalate_add "$state" "needs-decision: pick A"
+  # Marker older than max-defer so the first inject is allowed to alarm.
+  printf 'old\n' > "$state/.subsuper-inject-wedged"
+  touch -t 202001010000 "$state/.subsuper-inject-wedged"
+  # Reset the epoch guard (an earlier test's inject may have advanced it).
+  WEDGE_ALARM_LAST_EPOCH=0
+  SC_WEDGE_ALARM_LOG="$log" SC_WEDGE_ALARM_CHANNEL=osascript \
+    SC_MAX_DEFER_SECS=300 inject_wedge_alarm "$state" 900
+  # Second call: marker is now fresh (just rewritten), so it must return early
+  # and fire nothing more.
+  SC_WEDGE_ALARM_LOG="$log" SC_WEDGE_ALARM_CHANNEL=osascript \
+    SC_MAX_DEFER_SECS=300 inject_wedge_alarm "$state" 905
+  [ "$(grep -c . "$log" 2>/dev/null || echo 0)" -eq 1 ] \
+    || fail "wedge alarm fired more than once within a max-defer window: $(cat "$log")"
+  pass "wedge alarm active alert is rate-limited to once per max-defer window"
+}
+
 test_daemon_state_root_uses_fm_home
 test_classify_routine_signal_self
 test_classify_terminal_signal_escalates
@@ -724,3 +846,12 @@ test_below_max_defer_does_nothing
 test_max_defer_afk_inactive_does_not_flush_or_alarm
 test_fm_send_exits_nonzero_on_confirmed_swallow
 test_fm_send_exits_nonzero_on_initial_send_failure
+test_wedge_alarm_library_mode_defaults_to_discard
+test_wedge_alarm_osascript_channel_selected
+test_wedge_alarm_herdr_channel_selected
+test_wedge_alarm_multiple_channels_all_fire
+test_wedge_alarm_off_kill_switch_fires_nothing
+test_wedge_alarm_channel_failure_degrades_silently
+test_wedge_alarm_command_channel_receives_summary
+test_wedge_alarm_command_failure_hides_command
+test_wedge_alarm_rate_limited_once_per_window

@@ -101,7 +101,11 @@ attempts one normal flush, which still requires an idle pane and empty composer.
 If that submit cannot be confirmed, it raises a loud, rate-limited wedge alarm:
 an ERROR in the daemon log, a durable
 `state/.subsuper-inject-wedged` marker (surface it on the "while you were out"
-catch-up if present), and a flash on the expediter client's status line.
+catch-up if present), a flash on the expediter client's status line, and a
+backend-independent active alert (`wedge_alarm_notify`: macOS banner, herdr, or a
+`command:` push) so a wedge on a non-tmux backend still reaches the Chef off the
+dead pane. Default-on; disable with `config/wedge-alarm` set to `off`. See
+`docs/wedge-alarm.md`.
 So a guard false-positive becomes a visible stall, never an unbounded silent no-op.
 
 ## Submit model
@@ -170,7 +174,9 @@ the marker lets Souschef distinguish it from a real Chef message.
   buffered past `SC_MAX_DEFER_SECS` (default 300s), the daemon attempts one
   normal flush, which still requires an idle pane and empty composer. If that
   cannot confirm a submit, it raises a loud, rate-limited wedge alarm: ERROR log,
-  durable `state/.subsuper-inject-wedged` marker, and a status-line flash. A
+  durable `state/.subsuper-inject-wedged` marker, a status-line flash, and a
+  backend-independent active alert (`docs/wedge-alarm.md`; default-on, `off` to
+  disable) so a non-tmux wedge still reaches the Chef. A
   composer false-positive surfaces as a visible stall, never an unbounded silent
   no-op.
 - **Verified type-once submit model** - the digest is typed once via

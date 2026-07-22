@@ -513,6 +513,7 @@ Inline facts that must survive without a loaded skill:
 - If the message starts with `/afk`, stay afk and refresh the flag.
 - Any other unmarked message means the Chef is back: clear `state/.afk`, stop the daemon, flush catch-up from `state/.wake-queue`, `state/.subsuper-escalations`, and `state/.subsuper-inject-wedged`, then re-arm normal pass expediting.
 - Afk never changes approval authority; PR merges, ask-user findings, destructive actions, irreversible actions, and security-sensitive choices still require the same approval they required before.
+- If an away-mode injection wedges past `SC_MAX_DEFER_SECS`, the daemon raises a backend-independent, default-on active alarm (macOS banner, herdr, or a `command:` push) so a wedge on a non-tmux backend still reaches the Chef off the dead pane; disable via `config/wedge-alarm` = `off` (see `docs/wedge-alarm.md`).
 - Bias ambiguous cases toward exit because a present Chef beats token savings and a false exit is self-correcting.
 
 ### Stuck-cook recovery
