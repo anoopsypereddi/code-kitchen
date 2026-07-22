@@ -374,6 +374,25 @@ sc_backend_herdr_tab_is_husk() {  # <session> <pane_id>
   esac
 }
 
+# sc_backend_herdr_agent_alive: CONFIDENT liveness of a live harness-agent
+# PROCESS under <target> ("<session>:<pane_id>"), for the same session-start
+# secondmate-liveness sweep sc_backend_tmux_agent_alive serves. Reuses the
+# already-verified husk classifier sc_backend_herdr_pane_agent_state: `dead` (a
+# structurally-gone pane) and `no-agent` (a restored, agent-less bare shell -
+# EXACTLY the shape a dead secondmate leaves behind) both collapse to `dead`;
+# `live` (a real registered agent_status, including idle/blocked) maps to
+# `alive`; anything else stays `unknown` - fail-safe toward refusal, exactly
+# like the husk check. Callers must never treat `unknown` as a confirmed-dead
+# signal.
+sc_backend_herdr_agent_alive() {  # <target>
+  sc_backend_herdr_parse_target "$1" || { printf 'unknown'; return 0; }
+  case "$(sc_backend_herdr_pane_agent_state "$SC_BACKEND_HERDR_SESSION" "$SC_BACKEND_HERDR_PANE")" in
+    dead|no-agent) printf 'dead' ;;
+    live) printf 'alive' ;;
+    *) printf 'unknown' ;;
+  esac
+}
+
 # sc_backend_herdr_create_task: create the task's tab (one pane) in <container>
 # ("session:workspace_id"). Herdr does NOT enforce label uniqueness (the
 # duplicate check is ours, mirroring tmux's). A same-labeled tab that is a
