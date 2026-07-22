@@ -8,7 +8,7 @@
   /></a>
 </p>
 
-<h3 align="center">Talk to the Souschef. Ship with the brigade.</h3>
+<h3 align="center">Yes Chef.</h3>
 
 ## What it is
 
