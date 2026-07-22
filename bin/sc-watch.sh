@@ -4,7 +4,9 @@
 #   signal: <file>...     a crewmate wrote a status line or a turn-end hook fired; signals
 #                         landing within SC_SIGNAL_GRACE of each other coalesce into one wake
 #   stale: <window>       a crewmate pane stopped changing and shows no busy signature
-#   check: <script>: <out> a per-task check script (e.g. merged-PR poll) produced output
+#   check: <script>: <out> an authenticated per-task check (e.g. merged-PR poll) produced output
+#   check: rejected unauthenticated state check <id>...  a state/*.check.sh was not
+#                         hash-bound to its trust file and was refused, not executed
 #   heartbeat              fleet review due; starts at SC_HEARTBEAT and backs off to SC_HEARTBEAT_MAX
 # For normal supervision, re-arm after each wake by running bin/sc-watch-arm.sh
 # through the harness's tracked background mechanism. Direct duplicate
@@ -21,6 +23,8 @@ mkdir -p "$STATE"
 . "$SCRIPT_DIR/sc-wake-lib.sh"
 # shellcheck source=bin/sc-backend.sh
 . "$SCRIPT_DIR/sc-backend.sh"
+# shellcheck source=bin/sc-check-lib.sh
+. "$SCRIPT_DIR/sc-check-lib.sh"
 
 WATCH_LOCK="$STATE/.watch.lock"
 WATCH_PATH="$SCRIPT_DIR/sc-watch.sh"
@@ -225,6 +229,9 @@ scan_signals() {
   return 0
 }
 
+# Run a check script under a timeout, capturing its stdout. The caller passes a
+# private, hash-verified SNAPSHOT path (never a live state/*.check.sh), so a
+# swap between authentication and execution cannot change what runs.
 run_check() {
   local c=$1
   if command -v timeout >/dev/null 2>&1; then
@@ -260,9 +267,24 @@ while :; do
   # never run until the fleet went quiet. Checks are due only every
   # CHECK_INTERVAL, so most cycles skip this block and fall straight through.
   if [ "$(age_of "$STATE/.last-check")" -ge "$CHECK_INTERVAL" ]; then
+    rejected_checks=
     for c in "$STATE"/*.check.sh; do
       [ -e "$c" ] || continue
-      out=$(run_check "$c")
+      # Authenticated execution: state/ is a shared, gitignored dir, so a check
+      # is run ONLY if it is hash-bound to the 0600 trust file this souschef
+      # wrote when it armed the poll, and it is run from a private re-verified
+      # SNAPSHOT, never the live file (closes the glob->exec TOCTOU). Anything
+      # unregistered, tampered, or otherwise unauthenticated is refused without
+      # executing and reported as one wake line.
+      id=$(basename "$c" .check.sh)
+      if sc_check_snapshot_prepare "$STATE" "$id"; then
+        out=$(run_check "$SC_CHECK_SNAPSHOT")
+        sc_check_snapshot_cleanup
+      else
+        sc_check_snapshot_cleanup
+        rejected_checks="$rejected_checks $id"
+        continue
+      fi
       if [ -n "$out" ]; then
         reason="check: $c: $out"
         sc_wake_append check "$c" "$reason" || exit 1
@@ -270,6 +292,12 @@ while :; do
         wake "$reason"
       fi
     done
+    if [ -n "$rejected_checks" ]; then
+      reason="check: rejected unauthenticated state check$rejected_checks"
+      sc_wake_append check unauthenticated-state-check "$reason" || exit 1
+      touch "$STATE/.last-check"
+      wake "$reason"
+    fi
     touch "$STATE/.last-check"
   fi
 
