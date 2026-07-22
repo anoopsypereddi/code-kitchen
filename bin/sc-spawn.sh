@@ -1,12 +1,22 @@
 #!/usr/bin/env bash
 # Spawn a direct report: a crewmate in an isolated git worktree (carved by
 # bin/sc-worktree.sh), or a secondmate in its isolated souschef home.
-# Usage: sc-spawn.sh <task-id> <project-dir> [harness|launch-command] [--scout]
-#        sc-spawn.sh <task-id> [<souschef-home>] [harness|launch-command] --secondmate
+# Usage: sc-spawn.sh <task-id> <project-dir> [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--scout]
+#        sc-spawn.sh <task-id> [<souschef-home>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] --secondmate
 #   With no harness arg, the harness comes from sc-harness.sh crew (config/crew-harness,
 #   falling back to souschef's own harness). A bare adapter name (claude|codex|
-#   opencode|pi) overrides it for this spawn. A non-flag string containing whitespace
-#   is treated as a RAW launch command - the escape hatch for verifying new adapters.
+#   opencode|pi) or an explicit --harness <name> overrides it for this spawn. A
+#   non-flag string containing whitespace is treated as a RAW launch command - the escape
+#   hatch for verifying new adapters.
+#   --model <name> and --effort <low|medium|high|xhigh|max> are concrete profile axes
+#   chosen by souschef at intake (resolved from config/crew-dispatch.json via
+#   bin/sc-dispatch-select.sh). They are threaded into harnesses whose launch accepts them
+#   (claude/codex/opencode/pi) and recorded in task meta for traceability; a value a
+#   given harness cannot accept is recorded but its launch flag is omitted.
+#   When config/crew-dispatch.json exists, a crewmate/scout spawn REQUIRES an explicit
+#   harness (--harness, a positional adapter, or a raw launch command) so souschef cannot
+#   silently skip the dispatch rules; secondmate spawns are exempt and still resolve
+#   through config/secondmate-harness.
 #   --scout records kind=scout in the task's meta (report deliverable, scratch worktree;
 #   see AGENTS.md task lifecycle); --secondmate records kind=secondmate and launches in a
 #   provisioned souschef home; the default is kind=ship.
@@ -31,6 +41,8 @@
 #                  turn-end signal rides the launch command, e.g. codex -c notify=[...])
 #     __PIEXT__    absolute path to state/<task-id>.pi-ext.ts (pi turn-end extension,
 #                  written by this script; outside the worktree to avoid pi's trust gate)
+#     __MODELFLAG__ / __EFFORTFLAG__  per-harness --model/--effort launch flags (empty
+#                  when unset, so the launch command is byte-identical to today)
 # Per-harness turn-end hooks are installed automatically; some live outside the worktree.
 # On success prints: spawned <id> harness=<name> kind=<ship|scout|secondmate> mode=<mode> yolo=<on|off> window=<session:window> worktree=<path>
 # mode/yolo are resolved per-project from data/projects.md for ship/scout tasks;
@@ -45,6 +57,7 @@ SC_WORKTREE="${SC_WORKTREE_BIN:-$SC_ROOT/bin/sc-worktree.sh}"
 STATE="${SC_STATE_OVERRIDE:-$SC_HOME/state}"
 DATA="${SC_DATA_OVERRIDE:-$SC_HOME/data}"
 PROJECTS="${SC_PROJECTS_OVERRIDE:-$SC_HOME/projects}"
+CONFIG="${SC_CONFIG_OVERRIDE:-$SC_HOME/config}"
 SUB_HOME_MARKER=".sc-secondmate-home"
 # shellcheck source=bin/sc-ff-lib.sh
 . "$SCRIPT_DIR/sc-ff-lib.sh"
@@ -54,14 +67,44 @@ SUB_HOME_MARKER=".sc-secondmate-home"
 # set by the batch loop below), so the guard runs once for the batch, not once per pair.
 [ -n "${SC_SPAWN_NO_GUARD:-}" ] || "$SC_ROOT/bin/sc-guard.sh" || true
 KIND=ship
+HARNESS_ARG=
+MODEL=
+EFFORT=
+HARNESS_SET=0
+MODEL_SET=0
+EFFORT_SET=0
 POS=()
+want_value=
 for a in "$@"; do
+  if [ -n "$want_value" ]; then
+    case "$want_value" in
+      harness) HARNESS_ARG=$a; HARNESS_SET=1 ;;
+      model) MODEL=$a; MODEL_SET=1 ;;
+      effort) EFFORT=$a; EFFORT_SET=1 ;;
+    esac
+    want_value=
+    continue
+  fi
   case "$a" in
     --scout) KIND=scout ;;
     --secondmate) KIND=secondmate ;;
+    --harness) want_value=harness ;;
+    --harness=*) HARNESS_ARG=${a#--harness=}; HARNESS_SET=1 ;;
+    --model) want_value=model ;;
+    --model=*) MODEL=${a#--model=}; MODEL_SET=1 ;;
+    --effort) want_value=effort ;;
+    --effort=*) EFFORT=${a#--effort=}; EFFORT_SET=1 ;;
     *) POS+=("$a") ;;
   esac
 done
+[ -z "$want_value" ] || { echo "error: --$want_value requires a value" >&2; exit 1; }
+[ "$HARNESS_SET" -eq 0 ] || [ -n "$HARNESS_ARG" ] || { echo "error: --harness requires a non-empty value" >&2; exit 1; }
+[ "$MODEL_SET" -eq 0 ] || [ -n "$MODEL" ] || { echo "error: --model requires a non-empty value" >&2; exit 1; }
+[ "$EFFORT_SET" -eq 0 ] || [ -n "$EFFORT" ] || { echo "error: --effort requires a non-empty value" >&2; exit 1; }
+case "$EFFORT" in
+  ''|low|medium|high|xhigh|max) : ;;
+  *) echo "error: --effort must be one of low, medium, high, xhigh, max" >&2; exit 1 ;;
+esac
 
 # Batch dispatch (see header): when the first positional is an `id=repo` pair, treat every
 # positional as one and spawn each by re-execing this script in single-task mode. We use
@@ -72,6 +115,20 @@ done
 idpart=${POS[0]:-}
 idpart=${idpart%%=*}
 if [ "${#POS[@]}" -gt 0 ] && [ "${POS[0]}" != "$idpart" ] && case "$idpart" in */*) false ;; *) true ;; esac; then
+  # Dispatch gate for a batch: when config/crew-dispatch.json is active, every
+  # crewmate/scout pair needs an explicit harness resolved from the rules, so a
+  # shared --harness is required (satisfies each re-exec'd single-task gate below).
+  if [ "$KIND" != secondmate ] && [ -z "$HARNESS_ARG" ] && [ -f "$CONFIG/crew-dispatch.json" ]; then
+    echo "error: config/crew-dispatch.json is active - pass an explicit --harness resolved from the dispatch rules (the consultation backstop, so the rules are never silently skipped)." >&2
+    exit 1
+  fi
+  # Shared profile flags re-applied to every pair, so a batch spawns each pair on
+  # the same resolved harness/model/effort.
+  shared_args=()
+  [ -z "$HARNESS_ARG" ] || shared_args+=(--harness "$HARNESS_ARG")
+  [ -z "$MODEL" ] || shared_args+=(--model "$MODEL")
+  [ -z "$EFFORT" ] || shared_args+=(--effort "$EFFORT")
+  [ "$KIND" != scout ] || shared_args+=(--scout)
   rc=0
   for pair in "${POS[@]}"; do
     case "$pair" in
@@ -82,11 +139,8 @@ if [ "${#POS[@]}" -gt 0 ] && [ "${POS[0]}" != "$idpart" ] && case "$idpart" in *
       echo "error: batch dispatch does not support --secondmate; spawn each secondmate explicitly" >&2
       rc=2
       continue
-    elif [ "$KIND" = scout ]; then
-      if SC_SPAWN_NO_GUARD=1 "$SC_ROOT/bin/sc-spawn.sh" "${pair%%=*}" "${pair#*=}" --scout; then :; else echo "batch: FAILED to spawn ${pair%%=*} (${pair#*=})" >&2; rc=1; fi
-    else
-      if SC_SPAWN_NO_GUARD=1 "$SC_ROOT/bin/sc-spawn.sh" "${pair%%=*}" "${pair#*=}"; then :; else echo "batch: FAILED to spawn ${pair%%=*} (${pair#*=})" >&2; rc=1; fi
     fi
+    if SC_SPAWN_NO_GUARD=1 "$SC_ROOT/bin/sc-spawn.sh" "${pair%%=*}" "${pair#*=}" "${shared_args[@]+"${shared_args[@]}"}"; then :; else echo "batch: FAILED to spawn ${pair%%=*} (${pair#*=})" >&2; rc=1; fi
   done
   exit "$rc"
 fi
@@ -133,25 +187,29 @@ launch_template() {
     # does NOT suppress the interactive ghost text (verified empirically), so the env
     # var is the correct control. The dim-aware composer reader in sc-tmux-lib.sh is
     # the defense-in-depth backstop for any pane this flag cannot reach.
-    claude) printf '%s' 'CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false claude --dangerously-skip-permissions "$(cat __BRIEF__)"' ;;
+    claude) printf '%s' 'CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false claude --dangerously-skip-permissions __MODELFLAG____EFFORTFLAG__"$(cat __BRIEF__)"' ;;
     codex)
       if [ "$kind" = secondmate ]; then
-        printf '%s' 'codex --dangerously-bypass-approvals-and-sandbox "$(cat __BRIEF__)"'
+        printf '%s' 'codex __MODELFLAG____EFFORTFLAG__--dangerously-bypass-approvals-and-sandbox "$(cat __BRIEF__)"'
       else
-        printf '%s' 'codex --dangerously-bypass-approvals-and-sandbox -c "notify=[\"bash\",\"-c\",\"touch __TURNEND__\"]" "$(cat __BRIEF__)"'
+        printf '%s' 'codex __MODELFLAG____EFFORTFLAG__--dangerously-bypass-approvals-and-sandbox -c "notify=[\"bash\",\"-c\",\"touch __TURNEND__\"]" "$(cat __BRIEF__)"'
       fi
       ;;
-    opencode) printf '%s' 'OPENCODE_CONFIG_CONTENT='\''{"permission":{"*":"allow"}}'\'' opencode --prompt "$(cat __BRIEF__)"' ;;
+    opencode) printf '%s' 'OPENCODE_CONFIG_CONTENT='\''{"permission":{"*":"allow"}}'\'' opencode __MODELFLAG__--prompt "$(cat __BRIEF__)"' ;;
     pi)
       if [ "$kind" = secondmate ]; then
-        printf '%s' 'pi "$(cat __BRIEF__)"'
+        printf '%s' 'pi __MODELFLAG____EFFORTFLAG__"$(cat __BRIEF__)"'
       else
-        printf '%s' 'pi -e __PIEXT__ "$(cat __BRIEF__)"'
+        printf '%s' 'pi __MODELFLAG____EFFORTFLAG__-e __PIEXT__ "$(cat __BRIEF__)"'
       fi
       ;;
     *) return 1 ;;
   esac
 }
+
+# An explicit --harness <name> is the flag form of the positional adapter arg; it
+# feeds the same resolution below (it wins over any positional ARG3).
+[ -z "$HARNESS_ARG" ] || ARG3=$HARNESS_ARG
 
 case "$ARG3" in
   *' '*)  # raw launch command (unverified-adapter escape hatch)
@@ -162,14 +220,50 @@ case "$ARG3" in
     done
     ;;
   '')
-    HARNESS=$("$SC_ROOT/bin/sc-harness.sh" crew)
-    LAUNCH=$(launch_template "$HARNESS" "$KIND") || { echo "error: no launch template for harness '$HARNESS' (from config/crew-harness or detection); pass a raw launch command to use an unverified adapter" >&2; exit 1; }
+    # No explicit harness: resolve from config. A secondmate AGENT launches on the
+    # secondmate harness (config/secondmate-harness -> config/crew-harness -> own);
+    # every other kind uses the crew harness only when no dispatch profile file is
+    # active. Resolving here on every spawn is what makes both splits DURABLE - a
+    # respawn (recovery, /updatesouschef, restart) re-resolves.
+    if [ "$KIND" = secondmate ]; then
+      HARNESS=$("$SC_ROOT/bin/sc-harness.sh" secondmate)
+      harness_src='config/secondmate-harness (falling back to config/crew-harness)'
+    else
+      if [ -f "$CONFIG/crew-dispatch.json" ]; then
+        echo "error: config/crew-dispatch.json is active - pass an explicit harness resolved from the dispatch rules (the consultation backstop, so the rules are never silently skipped)." >&2
+        exit 1
+      fi
+      HARNESS=$("$SC_ROOT/bin/sc-harness.sh" crew)
+      harness_src='config/crew-harness'
+    fi
+    LAUNCH=$(launch_template "$HARNESS" "$KIND") || { echo "error: no launch template for harness '$HARNESS' (from $harness_src or detection); pass a raw launch command to use an unverified adapter" >&2; exit 1; }
     ;;
   *)
     HARNESS=$ARG3
     LAUNCH=$(launch_template "$HARNESS" "$KIND") || { echo "error: unknown harness '$HARNESS'; pass a raw launch command to use an unverified adapter" >&2; exit 1; }
     ;;
 esac
+
+# config/secondmate-harness may carry optional model/effort tokens alongside the
+# harness ("<harness> [<model>] [<effort>]"). They apply only to a --secondmate spawn
+# with no explicit per-spawn harness/raw launch (so the harness came from the
+# secondmate config fallback chain). Resolving here on every spawn makes the pin
+# durable across respawns. Explicit --model/--effort flags still win.
+if [ "$KIND" = secondmate ] && [ -z "$ARG3" ]; then
+  if [ "$MODEL_SET" -eq 0 ]; then
+    SM_MODEL=$("$SC_ROOT/bin/sc-harness.sh" secondmate-model)
+    [ -z "$SM_MODEL" ] || MODEL=$SM_MODEL
+  fi
+  if [ "$EFFORT_SET" -eq 0 ]; then
+    SM_EFFORT=$("$SC_ROOT/bin/sc-harness.sh" secondmate-effort)
+    if [ -n "$SM_EFFORT" ]; then
+      case "$SM_EFFORT" in
+        low|medium|high|xhigh|max) EFFORT=$SM_EFFORT ;;
+        *) echo "warning: config/secondmate-harness effort token '$SM_EFFORT' is not one of low, medium, high, xhigh, max; ignoring" >&2 ;;
+      esac
+    fi
+  fi
+fi
 
 secondmate_registry_value() {
   local id=$1 key=$2 reg line value
@@ -190,6 +284,49 @@ shell_quote() {
   printf "'"
   printf '%s' "$1" | sed "s/'/'\\\\''/g"
   printf "'"
+}
+
+# Per-harness --model launch flag. A model is threaded only into harnesses whose
+# launch accepts it; an unset or "default" model yields the empty string so the
+# launch command is byte-identical to a no-model spawn.
+model_flag_for_harness() {
+  local harness=$1 model=$2
+  [ -n "$model" ] && [ "$model" != default ] || return 0
+  case "$harness" in
+    claude|codex|opencode|pi)
+      printf -- '--model %s ' "$(shell_quote "$model")"
+      ;;
+  esac
+}
+
+# Per-harness effort launch flag. Each harness advertises its own effort
+# vocabulary and flag name; a requested effort a harness cannot accept is omitted
+# here (still recorded in meta) rather than passed as a known-bad value.
+effort_flag_for_harness() {
+  local harness=$1 effort=$2
+  [ -n "$effort" ] && [ "$effort" != default ] || return 0
+  case "$harness" in
+    claude)
+      case "$effort" in
+        low|medium|high|xhigh|max) printf -- '--effort %s ' "$(shell_quote "$effort")" ;;
+      esac
+      ;;
+    codex)
+      # codex's config schema uses model_reasoning_effort; its catalog advertises
+      # low|medium|high|xhigh. Omit max rather than passing an unsupported value.
+      case "$effort" in
+        low|medium|high|xhigh) printf -- '-c %s ' "$(shell_quote "model_reasoning_effort=\"$effort\"")" ;;
+      esac
+      ;;
+    pi)
+      # pi accepts the full shared effort vocabulary via --thinking.
+      case "$effort" in
+        low|medium|high|xhigh|max) printf -- '--thinking %s ' "$(shell_quote "$effort")" ;;
+      esac
+      ;;
+    # opencode's interactive `opencode --prompt` launch has a verified --model flag
+    # but no verified effort flag, so effort is not threaded for opencode.
+  esac
 }
 
 resolved_existing_dir() {
@@ -553,6 +690,12 @@ mkdir -p "$STATE"
   echo "worktree=$WT"
   echo "project=$PROJ_ABS"
   echo "harness=$HARNESS"
+  # Profile axes recorded ONLY when set, so an absent-dispatch spawn writes a meta
+  # byte-identical to before these knobs existed (readers treat a missing key as
+  # "the harness default"). A value the harness cannot accept is still recorded
+  # here for traceability even though its launch flag was omitted above.
+  [ -z "$MODEL" ] || echo "model=$MODEL"
+  [ -z "$EFFORT" ] || echo "effort=$EFFORT"
   echo "kind=$KIND"
   echo "mode=$MODE"
   echo "yolo=$YOLO"
@@ -569,9 +712,15 @@ mkdir -p "$STATE"
 sq_brief=$(shell_quote "$BRIEF")
 sq_turnend=$(shell_quote "$TURNEND")
 sq_piext=$(shell_quote "$STATE/$ID.pi-ext.ts")
+# Per-harness --model/--effort flags. Empty when unset or unsupported by the
+# harness, so the substituted launch command is byte-identical to a no-profile spawn.
+MODELFLAG=$(model_flag_for_harness "$HARNESS" "$MODEL")
+EFFORTFLAG=$(effort_flag_for_harness "$HARNESS" "$EFFORT")
 LAUNCH=${LAUNCH//__BRIEF__/$sq_brief}
 LAUNCH=${LAUNCH//__TURNEND__/$sq_turnend}
 LAUNCH=${LAUNCH//__PIEXT__/$sq_piext}
+LAUNCH=${LAUNCH//__MODELFLAG__/$MODELFLAG}
+LAUNCH=${LAUNCH//__EFFORTFLAG__/$EFFORTFLAG}
 if [ "$KIND" = secondmate ]; then
   sq_home=$(shell_quote "$PROJ_ABS")
   LAUNCH="SC_ROOT_OVERRIDE= SC_STATE_OVERRIDE= SC_DATA_OVERRIDE= SC_PROJECTS_OVERRIDE= SC_CONFIG_OVERRIDE= SC_HOME=$sq_home $LAUNCH"

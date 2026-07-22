@@ -7,7 +7,13 @@
 #                 "CREW_HARNESS_OVERRIDE: <name>", "FLEET_SYNC: <repo>: skipped: <reason>",
 #                 "TANGLE: <remediation>",
 #                 "SECONDMATE_SYNC: secondmate <id>: skipped: <reason>",
+#                 "CREW_DISPATCH: invalid config/crew-dispatch.json - <reason>",
 #                 "NUDGE_SECONDMATES: <window-targets...>".
+#          A CREW_DISPATCH line means config/crew-dispatch.json exists but is
+#          malformed (bad JSON, an unverified harness, a bad profile, an unknown
+#          select, or an effort a harness cannot accept); dispatch stays inert
+#          until fixed - the file-presence spawn gate still forces an explicit
+#          resolved harness, so a broken config never silently skips the rules.
 #          A NUDGE_SECONDMATES line lists the RUNNING secondmate windows whose
 #          worktree was fast-forwarded to souschef's own current default-branch
 #          commit (a purely LOCAL fast-forward, never an origin fetch) AND whose
@@ -144,7 +150,7 @@ pkg_name() {
 
 install_cmd() {
   case "$1" in
-    tmux|node|npm|gh|git|curl)
+    tmux|node|npm|gh|git|curl|jq)
       if [ -n "$PKG_INSTALL" ]; then
         echo "$PKG_INSTALL $(pkg_name "$1")"
       else
@@ -152,6 +158,78 @@ install_cmd() {
       fi ;;
     *) return 1 ;;
   esac
+}
+
+# Validate config/crew-dispatch.json when present (opt-in by file presence). A
+# valid file is silent; a malformed one prints one CREW_DISPATCH line and leaves
+# dispatch inert - the spawn gate still forces an explicit resolved harness, so a
+# broken config never silently skips the rules. Missing jq routes through the
+# normal MISSING install-consent flow. sc-dispatch-select.sh's header owns the
+# quota-balanced runtime contract; this only checks the static schema.
+crew_dispatch_validate() {
+  local file err
+  file="$CONFIG/crew-dispatch.json"
+  [ -f "$file" ] || return 0
+  if ! command -v jq >/dev/null 2>&1; then
+    echo "MISSING: jq (install: $(install_cmd jq))"
+    return 0
+  fi
+  if ! jq -e . "$file" >/dev/null 2>&1; then
+    echo "CREW_DISPATCH: invalid config/crew-dispatch.json - malformed JSON"
+    return 0
+  fi
+  err=$(jq -r '
+    def verified($h): ["claude","codex","opencode","pi"] | index($h);
+    def effort_ok($h; $e):
+      if $e == null then true
+      elif ($e | type) != "string" then false
+      elif $h == "claude" then (["low","medium","high","xhigh","max"] | index($e))
+      elif $h == "codex" then (["low","medium","high","xhigh"] | index($e))
+      elif $h == "pi" then (["low","medium","high","xhigh","max"] | index($e))
+      elif $h == "opencode" then false
+      else true
+      end;
+    def use_profiles($u):
+      if ($u | type) == "array" then $u
+      elif ($u | type) == "object" then [$u]
+      else []
+      end;
+    def bad_efforts:
+      ([(.rules // [])[]? | use_profiles(.use?)[]? | {h: .harness, e: .effort}]
+        + (if (.default? | type) == "object" then [{h: .default.harness, e: .default.effort}] else [] end))
+      | map(select(.e != null))
+      | map(select((.h | type) == "string" and verified(.h)))
+      | map(select(. as $p | effort_ok($p.h; $p.e) | not))
+      | map("\(.h):\(.e)")
+      | unique;
+    if type != "object" then "top-level value must be an object"
+    elif has("rules") and (.rules | type) != "array" then "rules must be an array"
+    elif [(.rules // [])[]? | select(type != "object")] | length > 0 then "each rule must be an object"
+    elif [(.rules // [])[]? | select((.when? | type) != "string" or (.when | length) == 0)] | length > 0 then "each rule needs non-empty when"
+    elif [(.rules // [])[]? | select((.use? | type) != "object" and (.use? | type) != "array")] | length > 0 then "each rule needs use"
+    elif [(.rules // [])[]? | select((.use? | type) == "array" and (.use | length) == 0)] | length > 0 then "each rule needs at least one use profile"
+    elif [(.rules // [])[]? | use_profiles(.use?)[]? | select(type != "object")] | length > 0 then "each use profile must be an object"
+    elif [(.rules // [])[]? | use_profiles(.use?)[]? | select((.harness? | type) != "string" or (.harness | length) == 0)] | length > 0 then "each use profile needs harness"
+    elif [(.rules // [])[]? | select(has("select") and ((.select? | type) != "string" or (.select | length) == 0))] | length > 0 then "select must be a non-empty string"
+    elif [(.rules // [])[]? | .select? // empty | select(. != "quota-balanced")] | length > 0 then
+      "unknown select: " + ([ (.rules // [])[]? | .select? // empty | select(. != "quota-balanced") ] | unique | join(", "))
+    elif has("default") and (.default | type) != "object" then "default must be an object"
+    elif has("default") and ((.default.harness? | type) != "string" or (.default.harness | length) == 0) then "default needs harness when present"
+    else
+      ([(.rules // [])[]? | use_profiles(.use?)[]?.harness] + [.default?.harness?]
+        | map(select(. != null))
+        | map(select(. as $h | verified($h) | not))
+        | unique) as $bad_harnesses
+      | if ($bad_harnesses | length) > 0 then "unverified harness: " + ($bad_harnesses | join(", "))
+        elif (bad_efforts | length) > 0 then "invalid effort: " + (bad_efforts | join(", "))
+        else empty
+        end
+    end
+  ' "$file" 2>/dev/null || true)
+  if [ -n "$err" ]; then
+    echo "CREW_DISPATCH: invalid config/crew-dispatch.json - $err"
+    return 0
+  fi
 }
 
 TOOLS="tmux node npm gh git curl"
@@ -186,6 +264,7 @@ fi
 crew=
 [ -f "$CONFIG/crew-harness" ] && crew=$(tr -d '[:space:]' < "$CONFIG/crew-harness" || true)
 [ -n "$crew" ] && [ "$crew" != "default" ] && echo "CREW_HARNESS_OVERRIDE: $crew"
+crew_dispatch_validate
 secondmate_sync
 fleet_sync
 exit 0

@@ -1,0 +1,18 @@
+# config/secondmate-harness - the harness the PRIMARY uses to launch station-chef
+# (secondmate) agents. Copy this file to config/ and edit the single active line.
+# config/ is gitignored, so this example lives under docs/examples/.
+#
+# Format: the first non-empty, non-comment line is parsed as
+#   <harness> [<model>] [<effort>]
+# whitespace-separated. A bare "<harness>" is harness-only (no model/effort flag),
+# exactly the pre-knob behavior. <effort> must be one of low|medium|high|xhigh|max
+# (a harness that cannot accept the value records it in meta but omits the flag).
+# When the harness token is absent or "default", station-chef launch falls back
+# through config/crew-harness and then the primary's own harness, and no model or
+# effort is read from this file. Model/effort come ONLY from this file; the crew
+# axis stays a bare adapter name in config/crew-harness.
+#
+# Examples (uncomment ONE):
+# claude
+# claude claude-sonnet-5 medium
+# codex gpt-5.5 high

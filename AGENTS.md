@@ -82,7 +82,7 @@ projects/            cloned repos; gitignored; READ-ONLY for you
 state/               volatile runtime signals; gitignored
   <id>.status        appended by cooks: "<state>: <note>" lines
   <id>.turn-ended    touched by turn-end hooks
-  <id>.meta          written by sc-spawn: window=, worktree=, project=, harness=, kind=, mode=, yolo=; backend= only for a non-tmux session provider (absent means tmux; see docs/session-backends.md); kind=secondmate also records home= and projects= (sc-pr-check appends pr= and verified pr_head= when available)
+  <id>.meta          written by sc-spawn: window=, worktree=, project=, harness=, kind=, mode=, yolo=; model=/effort= only when a dispatch/secondmate profile set them (absent means the harness default); backend= only for a non-tmux session provider (absent means tmux; see docs/session-backends.md); kind=secondmate also records home= and projects= (sc-pr-check appends pr= and verified pr_head= when available)
   <id>.check.sh      optional slow poll you write per task (e.g. merged-PR check)
   .wake-queue        durable queued wakes: epoch<TAB>seq<TAB>kind<TAB>key<TAB>payload
   .afk               durable away-mode flag; present = sub-expediter may inject escalations (set by /afk, cleared on user return)
@@ -139,6 +139,17 @@ Cooks default to the same harness you are running on.
 The Chef may override this at any time, typically at bootstrap: record the choice in `config/crew-harness` (a single adapter name; absent or `default` means mirror your own harness).
 The recorded harness is used for every fire until changed; a per-ticket instruction from the Chef ("run this one on codex") overrides it for that fire only.
 Resolve `default` with `bin/sc-harness.sh`; resolve the active cook harness with `bin/sc-harness.sh crew`.
+Verified adapters are claude, codex, opencode, and pi.
+
+**Dispatch profiles (per-task routing).**
+When `config/crew-dispatch.json` exists (opt-in by file presence), route each cook/scout per task instead of using the single `config/crew-harness`: read its natural-language `when` rules, pick the best match with your judgment, resolve that rule's profile with `bin/sc-dispatch-select.sh` (it handles the `use` array and the `select: quota-balanced` strategy, degrading cleanly to the first profile when `quota-axi` is absent), then pass the concrete `--harness`/`--model`/`--effort` to `bin/sc-spawn.sh`.
+With the file present, `sc-spawn` refuses a cook/scout fire that lacks an explicit harness, so the rules are never silently skipped; station-chef fires stay exempt.
+With no file, behavior is exactly as before: `sc-spawn` falls back to `config/crew-harness`.
+Bootstrap reports a malformed dispatch config as a `CREW_DISPATCH:` line; the canonical schema and quota-balanced contract live in [`docs/configuration.md`](docs/configuration.md).
+
+**Station-chef harness (`config/secondmate-harness`).**
+A separate local file sets the harness (plus optional model and effort on the same `<harness> [<model>] [<effort>]` line) the primary uses to launch station chefs; absent or `default` falls back through `config/crew-harness` and then your own harness, exactly as before this knob existed.
+`sc-spawn` resolves it on every station-chef fire, so it stays durable across respawns.
 
 Each adapter splits into mechanics and knowledge.
 The mechanics (launch command, autonomy flag, turn-end hook) live in `bin/sc-spawn.sh`; the knowledge you need while expediting (busy signature, exit, interrupt, dialogs, quirks, skill invocation, resume) lives in the agent-only `harness-adapters` skill.
