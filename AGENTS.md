@@ -494,7 +494,7 @@ That gap is now closed by primary-side, harness-native hooks that fire without S
 - A **watcher-arm command policy** (`bin/sc-arm-command-policy.mjs` via `bin/sc-arm-pretool-check.sh`) that rejects the exact `&`/`nohup`/pipeline/redirection/bundled fire-and-forget arm mistake (`&` -> `watcher-background`) and running `sc-watch.sh` directly, so the re-arm can only be a standalone harness-tracked background call.
 - A **cd-guard** (`bin/sc-cd-command-policy.mjs` via `bin/sc-cd-pretool-check.sh`) that blocks a persistent top-level `cd`/`pushd`/`popd` that would relocate the primary shell into a project clone.
 
-These reuse the same beacon/grace source of truth as `sc-guard.sh` (`state/.last-watcher-beat`, `SC_GUARD_GRACE`) and are wired per harness under `.claude/settings.json`, `.codex/hooks.json`, `.grok/hooks/`, `.opencode/plugins/`, and `.pi/extensions/` (grok's Stop hook is passive, so `bin/sc-turnend-guard-grok.sh` forces one `grok --resume` instead of blocking).
+These reuse the same beacon/grace source of truth as `sc-guard.sh` (`state/.last-watcher-beat`, `SC_GUARD_GRACE`) and are wired per harness under `.claude/settings.json`, `.codex/hooks.json`, `.opencode/plugins/`, and `.pi/extensions/` (OpenCode and pi turn-end events are passive, so their adapters force one bounded follow-up instead of blocking).
 Every one is scoped to a real PRIMARY checkout - the main home or a genuinely-marked station chef home - and is completely inert inside a cook's linked worktree, so it never interferes with a cook.
 Full contract and per-harness mechanics live in `docs/supervision-hooks.md`.
 

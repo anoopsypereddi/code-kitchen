@@ -456,16 +456,13 @@ test_codex_hooks_wire_shared_scripts() {
   pass ".codex/hooks.json: Stop + PreToolUse invoke the shared primary scripts, process-pwd anchored"
 }
 
-test_grok_hooks_wire_adapter_and_checks() {
-  local te arm cd
-  te=$(jq -r '.hooks.Stop[0].hooks[0].command // empty' "$ROOT/.grok/hooks/sc-primary-turnend-guard.json")
-  assert_contains "$te" 'GROK_WORKSPACE_ROOT' "grok Stop hook must anchor from GROK_WORKSPACE_ROOT"
-  assert_contains "$te" 'sc-turnend-guard-grok.sh' "grok Stop hook must invoke the grok adapter (passive-Stop workaround)"
-  arm=$(jq -r '.hooks.PreToolUse[0].hooks[0].command // empty' "$ROOT/.grok/hooks/sc-primary-arm-check.json")
-  assert_contains "$arm" 'sc-arm-pretool-check.sh' "grok PreToolUse must wire the arm check"
-  cd=$(jq -r '.hooks.PreToolUse[0].hooks[0].command // empty' "$ROOT/.grok/hooks/sc-primary-cd-check.json")
-  assert_contains "$cd" 'sc-cd-pretool-check.sh' "grok PreToolUse must wire the cd-guard"
-  pass ".grok/hooks: Stop routes through the grok resume adapter; PreToolUse wires arm + cd"
+test_no_grok_support_remains() {
+  [ ! -e "$ROOT/.grok" ] || fail ".grok/ must be removed (grok is not adopted)"
+  [ ! -e "$ROOT/bin/sc-turnend-guard-grok.sh" ] || fail "the grok turn-end adapter must be removed"
+  if grep -rIl -i 'grok' "$ROOT/bin" "$ROOT/.codex" "$ROOT/.claude" "$ROOT/.opencode" "$ROOT/.pi" "$ROOT/docs/supervision-hooks.md" 2>/dev/null | grep -q .; then
+    fail "no grok reference may remain in the supervision hook set"
+  fi
+  pass "no grok support remains: .grok/ and the adapter are gone and no grok references linger"
 }
 
 test_opencode_plugins_wire_shared_scripts() {
@@ -553,7 +550,7 @@ test_cd_allows_safe_forms_in_primary
 test_cd_inert_in_worktree
 test_claude_settings_wires_the_hook_set
 test_codex_hooks_wire_shared_scripts
-test_grok_hooks_wire_adapter_and_checks
+test_no_grok_support_remains
 test_opencode_plugins_wire_shared_scripts
 test_pi_extension_wires_shared_scripts
 test_opencode_plugin_forces_followup_live

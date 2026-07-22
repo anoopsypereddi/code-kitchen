@@ -24,8 +24,8 @@ fresh beacon alone is not proof, because a dead pid can leave a recent beacon.
 1. **Turn-end (Stop) guard** - `bin/sc-turnend-guard.sh`.
    Blocks the turn (exit 2, alarm on stderr) when a task is in flight and no live
    watcher holds this home's lock. Claude and codex block directly on exit 2;
-   OpenCode, pi, and grok turn-end events are passive, so their adapters force
-   one bounded follow-up instead.
+   OpenCode and pi turn-end events are passive, so their adapters force one
+   bounded follow-up instead.
    Loop guard: a Stop payload with `stop_hook_active=true` (the current stop was
    itself already forced by an earlier block this turn) always allows the stop,
    bounding the guard to at most one forced continuation per turn - never a
@@ -87,14 +87,8 @@ decision. Each harness's tracked config only dispatches to them:
 |---|---|---|
 | claude | `.claude/settings.json` Stop -> `sc-turnend-guard.sh` | arm + cd (`--claude`) + continuity |
 | codex | `.codex/hooks.json` Stop -> `sc-turnend-guard.sh` | arm + cd |
-| grok | `.grok/hooks/sc-primary-turnend-guard.json` -> `sc-turnend-guard-grok.sh` | arm + cd |
 | opencode | `.opencode/plugins/sc-primary-turnend-guard.js` (session.idle) | arm + cd (`tool.execute.before`) |
 | pi | `.pi/extensions/sc-primary-turnend-guard.ts` (agent_settled) | arm + cd (`tool_call`) |
-
-Grok Stop hooks are passive (exit 2 neither blocks nor feeds stderr back), so
-`bin/sc-turnend-guard-grok.sh` runs the shared predicate and, when it says the
-turn would end blind, forces one same-session `grok --resume` with the guard
-instruction; `GROK_TURNEND_GUARD_ACTIVE` is its one-follow-up loop guard.
 
 The continuity gate is wired for claude only; the Stop guard is the
 cross-harness backstop for a blind turn.
@@ -115,7 +109,7 @@ off the shared predicate rather than deferring to an arm coordinator.
 their primary-vs-worktree scoping, the fail-open paths, and that each harness's
 tracked config points at the shared scripts. It is hermetic over temp dirs and
 invokes no real agent session. Only the claude hook mechanism is exercised
-end-to-end in this repo's environment; the codex/grok/opencode/pi wiring
-dispatches to the same shared, tested scripts and mirrors firstmate's verified
-adapters, but the harness-native block/inject mechanisms themselves are not
-re-verified here.
+end-to-end in this repo's environment; the codex/opencode/pi wiring dispatches
+to the same shared, tested scripts and mirrors firstmate's verified adapters,
+but the harness-native block/inject mechanisms themselves are not re-verified
+here.

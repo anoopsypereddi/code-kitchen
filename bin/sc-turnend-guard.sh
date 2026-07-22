@@ -12,7 +12,7 @@
 # hooks invoke it every time the primary is about to end a turn, converting that
 # discipline rule into a structural block.
 # Claude and codex can block directly by preserving exit status 2 and stderr.
-# OpenCode, pi, and grok adapters use the same predicate and force one bounded
+# OpenCode and pi adapters use the same predicate and force one bounded
 # follow-up because their turn-end events are passive.
 #
 # Ships as a TRACKED hook, so this file is checked out into every worktree of

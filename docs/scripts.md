@@ -24,7 +24,6 @@ Each file also starts with a short header comment.
 | `sc-supervise-daemon.sh` | Presence-gated sub-expediter for walk-away (`/afk`) expediting: wraps `sc-watch.sh`, self-handles routine wakes in bash, and escalates only Chef-relevant events as one verified, batched, single-line digest prefixed with a sentinel marker |
 | `sc-tangle-lib.sh`       | Shared default-branch resolution and primary-checkout tangle classification sourced by bootstrap and guard         |
 | `sc-turnend-guard.sh`    | Primary-scoped turn-end (Stop) hook: BLOCKS the turn (exit 2) when a task is in flight and no live watcher holds the home lock; loop-guarded to one forced continuation per turn; inert in cook worktrees (see [supervision-hooks.md](supervision-hooks.md)) |
-| `sc-turnend-guard-grok.sh` | Grok passive-Stop adapter for `sc-turnend-guard.sh`: forces one `grok --resume` when the shared predicate says the turn would end blind |
 | `sc-continuity-pretool-check.sh` | Claude watcher-continuity PreToolUse gate: while blind, denies fleet-mutating `bin/sc-*.sh` and allows only wake-drain / watch-arm / literal teardown |
 | `sc-continuity-command-policy.mjs` | Classifier owner for the continuity gate: identifies executed fleet scripts and splits recovery commands from everything else |
 | `sc-arm-pretool-check.sh` | PreToolUse transport for the watcher-arm policy; renders per-harness deny objects, fails open on missing jq/node |
