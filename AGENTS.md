@@ -139,7 +139,7 @@ Cooks default to the same harness you are running on.
 The Chef may override this at any time, typically at bootstrap: record the choice in `config/crew-harness` (a single adapter name; absent or `default` means mirror your own harness).
 The recorded harness is used for every fire until changed; a per-ticket instruction from the Chef ("run this one on codex") overrides it for that fire only.
 Resolve `default` with `bin/sc-harness.sh`; resolve the active cook harness with `bin/sc-harness.sh crew`.
-Verified adapters are claude, codex, opencode, and pi; **grok** is wired end to end but UNVERIFIED - fire it only after a supervised trial confirms it here (see the `harness-adapters` skill), otherwise raise a `needs-decision` for that verification.
+Verified adapters are claude, codex, opencode, and pi.
 
 **Dispatch profiles (per-task routing).**
 When `config/crew-dispatch.json` exists (opt-in by file presence), route each cook/scout per task instead of using the single `config/crew-harness`: read its natural-language `when` rules, pick the best match with your judgment, resolve that rule's profile with `bin/sc-dispatch-select.sh` (it handles the `use` array and the `select: quota-balanced` strategy, degrading cleanly to the first profile when `quota-axi` is absent), then pass the concrete `--harness`/`--model`/`--effort` to `bin/sc-spawn.sh`.

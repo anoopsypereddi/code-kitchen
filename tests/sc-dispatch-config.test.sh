@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Behavior tests for the crew-dispatch + grok/secondmate-harness wiring across
+# Behavior tests for the crew-dispatch + secondmate-harness wiring across
 # sc-bootstrap, sc-spawn, and sc-harness. These pin the acceptance contract:
 #   - absent config/crew-dispatch.json => fire behavior is exactly today's (the
 #     launch command carries no profile flags and no explicit harness is required);
@@ -8,8 +8,6 @@
 #   - a resolved profile's --harness/--model/--effort reach the launch command and
 #     task meta;
 #   - bootstrap reports a malformed dispatch config and stays silent on a valid one;
-#   - grok is selectable (its launch template resolves) and its per-task turn-end
-#     hook is installed under a scoped GROK_HOME;
 #   - config/secondmate-harness overrides the station-chef launch harness.
 # The full-spawn cases use a fake tmux (which records every send-keys -l payload)
 # and a fake sc-worktree over a genuine isolated worktree, so no real terminal or
@@ -95,7 +93,7 @@ run_full_spawn() {
     SC_STATE_OVERRIDE="$home/state" SC_DATA_OVERRIDE="$home/data" \
     SC_PROJECTS_OVERRIDE="$home/projects" SC_CONFIG_OVERRIDE="$home/config" \
     SC_SPAWN_NO_GUARD=1 SC_FAKE_WT_PATH="$wt" TMUX="fake,1,0" \
-    SC_TEST_LAUNCH_CAPTURE="$cap" GROK_HOME="$home/grok" \
+    SC_TEST_LAUNCH_CAPTURE="$cap" \
     SC_WORKTREE_BIN="$fakebin/sc-worktree.sh" \
     PATH="$fakebin:$PATH" \
     "$SPAWN" "$id" "$proj" "$@" 2>&1
@@ -127,13 +125,13 @@ test_bootstrap_validation() {
   out=$(run_bootstrap_dispatch "$home" | grep '^CREW_DISPATCH:' || true)
   assert_contains "$out" "unverified harness: bogus" "unverified harness not reported"
 
-  # An effort a harness cannot accept => reported.
-  printf '%s\n' '{"rules":[{"when":"x","use":{"harness":"grok","effort":"max"}}]}' > "$home/config/crew-dispatch.json"
+  # An effort a harness cannot accept => reported (codex rejects max).
+  printf '%s\n' '{"rules":[{"when":"x","use":{"harness":"codex","effort":"max"}}]}' > "$home/config/crew-dispatch.json"
   out=$(run_bootstrap_dispatch "$home" | grep '^CREW_DISPATCH:' || true)
-  assert_contains "$out" "invalid effort: grok:max" "invalid grok effort not reported"
+  assert_contains "$out" "invalid effort: codex:max" "invalid codex effort not reported"
 
-  # A valid config (array + quota-balanced + verified grok default) => silent.
-  printf '%s\n' '{"rules":[{"when":"x","use":[{"harness":"claude"},{"harness":"codex"}],"select":"quota-balanced"}],"default":{"harness":"grok"}}' > "$home/config/crew-dispatch.json"
+  # A valid config (array + quota-balanced + a verified default) => silent.
+  printf '%s\n' '{"rules":[{"when":"x","use":[{"harness":"claude"},{"harness":"codex"}],"select":"quota-balanced"}],"default":{"harness":"pi"}}' > "$home/config/crew-dispatch.json"
   out=$(run_bootstrap_dispatch "$home" | grep '^CREW_DISPATCH:' || true)
   [ -z "$out" ] || fail "valid dispatch config wrongly reported: $out"
   pass "bootstrap: reports malformed dispatch config, silent on a valid one"
@@ -227,32 +225,6 @@ test_profile_flags_thread_through() {
   pass "profile: harness/model/effort thread into launch + meta; unsupported effort recorded not passed"
 }
 
-# --- grok is selectable + turn-end hook installed ---------------------------
-
-test_grok_selectable() {
-  local home proj fakebin wt out status launch
-  home="$TMP_ROOT/grok"; mkdir -p "$home/data" "$home/config"
-  proj=$(make_repo "$TMP_ROOT/grok-proj")
-  fakebin=$(make_spawn_fakebin "$TMP_ROOT/grok-fake")
-  git -C "$proj" worktree add -q --detach "$TMP_ROOT/grok-wt" >/dev/null 2>&1
-  wt="$TMP_ROOT/grok-wt"
-
-  out=$(run_full_spawn "$home" grok-d1 "$proj" "$wt" "$fakebin" --harness grok --effort medium); status=$?
-  expect_code 0 "$status" "grok spawn should resolve its launch template: $out"
-  launch=$(grep -F 'grok --always-approve' "$(capture_path "$home" grok-d1)" | head -1 || true)
-  [ -n "$launch" ] || fail "grok launch command not captured"
-  assert_contains "$launch" "--reasoning-effort 'medium'" "grok effort not threaded as --reasoning-effort"
-  assert_grep "harness=grok" "$home/state/grok-d1.meta" "grok harness not recorded"
-
-  # The global turn-end hook + per-task pointer + auth token are installed under
-  # the scoped GROK_HOME, never the real ~/.grok.
-  assert_present "$home/grok/hooks/sc-turn-end.sh" "grok global turn-end hook script missing"
-  assert_present "$home/grok/hooks/sc-turn-end.json" "grok global turn-end hook json missing"
-  assert_present "$wt/.sc-grok-turnend" "grok per-task pointer missing in worktree"
-  assert_present "$home/state/grok-d1.grok-turnend-token" "grok per-task auth token record missing"
-  pass "grok: selectable harness with effort flag and scoped turn-end hook installed"
-}
-
 # --- secondmate-harness overrides the station-chef launch --------------------
 
 test_secondmate_harness_knob() {
@@ -285,5 +257,4 @@ test_bootstrap_validation
 test_spawn_gate
 test_absent_config_is_todays_behavior
 test_profile_flags_thread_through
-test_grok_selectable
 test_secondmate_harness_knob

@@ -5,13 +5,13 @@
 #        sc-spawn.sh <task-id> [<souschef-home>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] --secondmate
 #   With no harness arg, the harness comes from sc-harness.sh crew (config/crew-harness,
 #   falling back to souschef's own harness). A bare adapter name (claude|codex|
-#   opencode|pi|grok) or an explicit --harness <name> overrides it for this spawn. A
+#   opencode|pi) or an explicit --harness <name> overrides it for this spawn. A
 #   non-flag string containing whitespace is treated as a RAW launch command - the escape
 #   hatch for verifying new adapters.
 #   --model <name> and --effort <low|medium|high|xhigh|max> are concrete profile axes
 #   chosen by souschef at intake (resolved from config/crew-dispatch.json via
 #   bin/sc-dispatch-select.sh). They are threaded into harnesses whose launch accepts them
-#   (claude/codex/opencode/pi/grok) and recorded in task meta for traceability; a value a
+#   (claude/codex/opencode/pi) and recorded in task meta for traceability; a value a
 #   given harness cannot accept is recorded but its launch flag is omitted.
 #   When config/crew-dispatch.json exists, a crewmate/scout spawn REQUIRES an explicit
 #   harness (--harness, a positional adapter, or a raw launch command) so souschef cannot
@@ -151,7 +151,7 @@ SOUSCHEF_HOME=
 
 if [ "$KIND" = secondmate ]; then
   case "${POS[1]:-}" in
-    ''|claude|codex|opencode|pi|grok)
+    ''|claude|codex|opencode|pi)
       ARG3=${POS[1]:-}
       ;;
     *' '*)
@@ -203,15 +203,6 @@ launch_template() {
         printf '%s' 'pi __MODELFLAG____EFFORTFLAG__-e __PIEXT__ "$(cat __BRIEF__)"'
       fi
       ;;
-    # grok (Grok Build TUI): a positional prompt starts the supervised interactive
-    # session. --always-approve auto-approves every tool execution so an unattended
-    # crewmate runs autonomously, the targeted equivalent of claude's
-    # --dangerously-skip-permissions. grok's turn-end signal does NOT ride the launch
-    # command - it is a Stop-event hook installed below (global hook + per-task
-    # pointer), so the template is identical for ship/scout/secondmate. UNVERIFIED
-    # in this souschef home (ported from firstmate's verified adapter, grok 0.2.73);
-    # see the harness-adapters skill.
-    grok) printf '%s' 'grok --always-approve __MODELFLAG____EFFORTFLAG__"$(cat __BRIEF__)"' ;;
     *) return 1 ;;
   esac
 }
@@ -302,7 +293,7 @@ model_flag_for_harness() {
   local harness=$1 model=$2
   [ -n "$model" ] && [ "$model" != default ] || return 0
   case "$harness" in
-    claude|codex|opencode|pi|grok)
+    claude|codex|opencode|pi)
       printf -- '--model %s ' "$(shell_quote "$model")"
       ;;
   esac
@@ -327,13 +318,6 @@ effort_flag_for_harness() {
         low|medium|high|xhigh) printf -- '-c %s ' "$(shell_quote "model_reasoning_effort=\"$effort\"")" ;;
       esac
       ;;
-    grok)
-      # grok's --reasoning-effort accepts only low|medium|high (per firstmate,
-      # grok 0.2.99); omit xhigh/max rather than passing a known-bad value.
-      case "$effort" in
-        low|medium|high) printf -- '--reasoning-effort %s ' "$(shell_quote "$effort")" ;;
-      esac
-      ;;
     pi)
       # pi accepts the full shared effort vocabulary via --thinking.
       case "$effort" in
@@ -343,10 +327,6 @@ effort_flag_for_harness() {
     # opencode's interactive `opencode --prompt` launch has a verified --model flag
     # but no verified effort flag, so effort is not threaded for opencode.
   esac
-}
-
-json_escape() {
-  printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
 }
 
 resolved_existing_dir() {
@@ -684,55 +664,6 @@ EOF
       ;;
     codex*)
       # codex: turn-end rides the launch command via -c notify=[...] and __TURNEND__.
-      ;;
-    grok*)
-      # grok fires a Stop hook at every turn boundary (per firstmate, grok 0.2.73),
-      # the clean equivalent of codex's notify= and pi's turn_end. But grok only
-      # loads PROJECT hooks after the folder is granted hook-trust, which souschef
-      # cannot establish at launch without editing grok's own managed trust store.
-      # GLOBAL hooks in ~/.grok/hooks/ are always trusted and load on first launch
-      # with no gate. So the turn-end hook lives OUTSIDE the worktree as a single
-      # souschef-owned global hook that is a guarded no-op for every non-souschef
-      # grok session: it fires only when the current workspace holds a
-      # .sc-grok-turnend token pointer that matches the souschef-owned hook
-      # registry. souschef then drops that per-task pointer (gitignored, like the
-      # other harnesses' worktree hook files). Result: the hook is outside the
-      # worktree, needs no trust grant, and touches only souschef-owned files.
-      # UNVERIFIED in this souschef home (ported from firstmate); see the
-      # harness-adapters skill.
-      GROK_HOOKS_DIR="${GROK_HOME:-$HOME/.grok}/hooks"
-      GROK_AUTH_DIR="$GROK_HOOKS_DIR/sc-turn-end.d"
-      mkdir -p "$GROK_AUTH_DIR"
-      old_umask=$(umask)
-      umask 077
-      auth_file=$(mktemp "$GROK_AUTH_DIR/sc.XXXXXXXXXXXX")
-      umask "$old_umask"
-      printf '%s\n' "$TURNEND" > "$auth_file"
-      printf '%s\n' "${auth_file##*/}" > "$STATE/$ID.grok-turnend-token"
-      sq_grok_auth_dir=$(shell_quote "$GROK_AUTH_DIR")
-      cat > "$GROK_HOOKS_DIR/sc-turn-end.sh" <<EOF
-#!/usr/bin/env bash
-set -u
-auth_dir=$sq_grok_auth_dir
-workspace=\${GROK_WORKSPACE_ROOT:-}
-[ -n "\$workspace" ] || exit 0
-p="\$workspace/.sc-grok-turnend"
-[ -f "\$p" ] || exit 0
-first=
-IFS= read -r -n 256 first < "\$p" 2>/dev/null || [ -n "\$first" ] || exit 0
-case "\$first" in token=*) token=\${first#token=} ;; *) exit 0 ;; esac
-case "\$token" in sc.????????????) : ;; *) exit 0 ;; esac
-case "\$token" in *[!A-Za-z0-9._-]*) exit 0 ;; esac
-t=\$(cat "\$auth_dir/\$token" 2>/dev/null) || exit 0
-case "\$t" in /*.turn-ended) : ;; *) exit 0 ;; esac
-touch "\$t" 2>/dev/null || true
-exit 0
-EOF
-      chmod +x "$GROK_HOOKS_DIR/sc-turn-end.sh"
-      hook_command=$(json_escape "bash $(shell_quote "$GROK_HOOKS_DIR/sc-turn-end.sh")")
-      printf '{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"%s"}]}]}}\n' "$hook_command" > "$GROK_HOOKS_DIR/sc-turn-end.json"
-      printf 'token=%s\n' "${auth_file##*/}" > "$WT/.sc-grok-turnend"
-      exclude_path '.sc-grok-turnend'
       ;;
   esac
 fi

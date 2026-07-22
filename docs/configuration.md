@@ -39,7 +39,6 @@ When `SC_HOME` is unset, it also behaves as the old whole-root override.
 ## Harness support
 
 claude, codex, opencode, and pi are all empirically verified; new harnesses get verified through a supervised trial ticket before joining the set.
-**grok** is wired end to end (detection via `GROK_AGENT=1`, launch template, model/effort flags, turn-end hook) but is **UNVERIFIED** in this souschef until a supervised trial confirms its launch/exit/busy-signature; treat it as plumbing, not a trusted adapter, until the harness-adapters skill marks it verified.
 The verified adapter knowledge - busy signatures, interrupt and exit commands, skill-invocation syntax, and per-harness quirks - lives in [`.agents/skills/harness-adapters/SKILL.md`](../.agents/skills/harness-adapters/SKILL.md).
 Launch mechanics, including the verified command templates, live in [`bin/sc-spawn.sh`](../bin/sc-spawn.sh).
 

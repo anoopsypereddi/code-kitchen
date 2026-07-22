@@ -44,8 +44,8 @@ test_static_resolution() {
     || fail "use array without select did not pick first element: $out"
 
   # An unknown select strategy degrades to the first element rather than erroring.
-  out=$(run_select '{"when":"x","use":[{"harness":"grok"},{"harness":"codex"}],"select":"made-up"}')
-  [ "$out" = '{"harness":"grok"}' ] || fail "unknown select did not degrade to first: $out"
+  out=$(run_select '{"when":"x","use":[{"harness":"pi"},{"harness":"codex"}],"select":"made-up"}')
+  [ "$out" = '{"harness":"pi"}' ] || fail "unknown select did not degrade to first: $out"
   pass "static resolution: passthrough, unwrap, first-element default, unknown-select fallback"
 }
 
