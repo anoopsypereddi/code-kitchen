@@ -59,11 +59,22 @@ loud `NOTICE` (it is experimental) and can be opted out of with
 
 ## Requirements for herdr
 
-- the `herdr` CLI on `PATH` (protocol >= 14), and
+- the `herdr` CLI on `PATH` (protocol >= 14, verified through protocol 16 /
+  herdr 0.7.4), and
 - `jq` (herdr's CLI output is JSON).
 
 Both are gated behind *selecting* the herdr backend - `bin/sc-bootstrap.sh`'s
 core tool list is unaffected, and a tmux-only brigade never needs them.
+
+Protocol 14 stays the supported minimum for backward compatibility; 16 (herdr
+0.7.4) is the newest build the reference verifies. A client newer than 16 is
+allowed and only prints a one-line notice. To install the exact pinned,
+verified build (checksum-gated, never a floating latest) run
+`bin/sc-install-herdr.sh <dir>`. For CI or manual testing against a live herdr
+without risking the default session, `bin/sc-herdr-lab.sh` provisions an
+isolated `sc-lab-*` session behind a fleet-state tripwire and
+`bin/sc-herdr-ci-cleanup.sh` bounds the post-suite teardown to job-owned lab
+sessions only.
 
 ## How the abstraction is wired
 
@@ -74,7 +85,7 @@ core tool list is unaffected, and a tmux-only brigade never needs them.
   scripts ran inline before, so the default path is byte-identical).
 - `bin/backends/herdr.sh` - the herdr adapter (adapted from the
   [firstmate](https://github.com/kunchenguid/firstmate) reference, verified
-  there against real herdr v0.7.1 / protocol 14). When Souschef runs **inside** a
+  there against real herdr through v0.7.4 / protocol 16). When Souschef runs **inside** a
   herdr pane (detected via `HERDR_SOCKET_PATH` / `HERDR_ENV`) a server is already
   running, so the adapter never launches a second `herdr server`: a transiently
   missed `status` probe only retries and, failing that, errors out - launching a

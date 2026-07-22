@@ -39,7 +39,10 @@ Each file also starts with a short header comment.
 | `sc-tmux-lib.sh`         | Shared tmux pane primitives for busy detection, dim-ghost-aware and border-aware composer detection, and verified submit retry |
 | `sc-backend.sh`          | Session-provider backend selection (`SC_BACKEND`/`config/backend`/auto-detect/tmux), meta helpers, selector resolution, and per-op dispatch (spawn/send/peek/kill/busy-state) to `bin/backends/*.sh`; see [session-backends.md](session-backends.md) |
 | `backends/tmux.sh`       | The default tmux session-provider adapter (window per cook); the same tmux commands the scripts ran inline, so the default path is byte-identical |
-| `backends/herdr.sh`      | Experimental [herdr](https://herdr.dev) adapter: spawns each cook as a native herdr pane so cooks are visible inside herdr; needs `herdr` (protocol >= 14) and `jq` |
+| `backends/herdr.sh`      | Experimental [herdr](https://herdr.dev) adapter: spawns each cook as a native herdr pane so cooks are visible inside herdr; needs `herdr` (protocol >= 14, verified through protocol 16 / herdr 0.7.4) and `jq` |
+| `sc-install-herdr.sh`    | Install a pinned, verified herdr build (0.7.4 / protocol 16): official release asset for the host OS/arch, bounded download, SHA-256 pin, post-install version+protocol gate; never a floating package-manager latest |
+| `sc-herdr-lab.sh`        | Provision and operate an isolated `sc-lab-*` herdr session (name/prepare/provision/run/stop/teardown) with a fleet-state tripwire; refuses the default session and any lifecycle op through `run` |
+| `sc-herdr-ci-cleanup.sh` | Bounded snapshot/teardown of CI-owned `sc-lab-*` herdr sessions; never touches the default session; no-op when herdr is absent |
 | `sc-peek.sh`             | Print a bounded tail of a cook pane (backend-aware capture via `sc-backend.sh`)                                     |
 | `sc-pr-check.sh`         | Record `pr=` and a verified `pr_head=` when available for a PR-ready ticket, then arm the pass's merge poll         |
 | `sc-promote.sh`          | Promote a prep ticket in place so it becomes a protected service ticket                                             |

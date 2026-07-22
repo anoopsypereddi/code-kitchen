@@ -74,6 +74,7 @@ config/crew-harness  cook harness override; LOCAL, gitignored; absent or "defaul
 data/                personal brigade records; LOCAL, gitignored as a whole
   backlog.md         ticket queue, dependencies, history
   captain.md         the Chef's curated personal preferences and working style; LOCAL, gitignored, and canonical even if harness memory mirrors it
+  learnings.md       fleet-local operational facts and gotchas; LOCAL, gitignored; dated, evidence-backed, curated with inspect-then-update - rewrite and prune rather than append forever, the same contract as captain.md; created lazily, absent until this home has a learning to store (see docs/examples/learnings.md and section 6)
   projects.md        thin brigade navigation registry; Souschef-private, parsed by sc-project-mode.sh (section 6)
   secondmates.md      station chef routing table; Souschef-private, maintained by sc-home-seed.sh (section 6)
   <id>/brief.md      per-ticket cook brief, or per-station-chef charter brief when kind=secondmate
@@ -129,6 +130,7 @@ Then read `data/secondmates.md` if present so intake can route work by registere
 Then read `data/captain.md` if present, to load this Chef's curated preferences and working style.
 If it is absent, use this template's defaults with no special preferences.
 Treat any harness memory of these preferences as a recall cache only; `data/captain.md` is the canonical, harness-portable home.
+Then read `data/learnings.md` if present, to load this home's curated operational gotchas (section 6); absent means no captured learnings yet.
 
 Do not fire any work until the tools that work needs are present and GitHub auth is good.
 Use the official `gh` CLI for all GitHub operations; reports and decisions go back to the Chef as plain markdown or chat.
@@ -249,6 +251,22 @@ Souschef's own not-yet-committed project knowledge lives in `data/` until a cook
 Create a project's `AGENTS.md` lazily on first need.
 The first service ticket that touches a project lacking one and has durable project-intrinsic knowledge to record should run `bin/sc-ensure-agents-md.sh`, add that knowledge, and commit both through the normal project delivery pipeline.
 Do not eagerly backfill every project.
+
+### Fleet-local operational knowledge (`data/learnings.md`)
+
+Cross-project operational gotchas that are neither a project's intrinsic knowledge nor a Chef preference live in `data/learnings.md`, this home's curated operational-knowledge log.
+It is the place for facts Souschef learns by running the brigade that would otherwise be re-discovered the hard way: a flaky remote that needs a retry, a tool version that must match across projects, a merge-queue quirk, a recurring intake ambiguity and how it was resolved.
+`data/captain.md` holds who the Chef is and how they like to work; `data/learnings.md` holds what this home has learned about operating.
+Both are LOCAL and gitignored (Chef-private brigade state), so neither is ever committed to this repo; `docs/examples/learnings.md` is the tracked template to copy from.
+
+The contract, mirroring `captain.md`:
+
+- **Dated.** Every entry carries the date it was learned (absolute, not "yesterday").
+- **Evidence-backed.** State the concrete observation that proves the learning - a command and its output, a PR link, an error - not a hunch.
+- **Curated, inspect-then-update.** Before adding, read what is already there; refine, correct, or prune a stale entry rather than appending forever. A wrong or obsolete learning is worse than none, so delete it when it no longer holds.
+- **Lazily created.** The file is absent until this home has a first real learning to store; do not scaffold an empty one. Create it by copying `docs/examples/learnings.md` when the first learning arrives.
+
+Station chefs inherit this convention automatically: each home carries the same `AGENTS.md` and keeps its own `data/learnings.md`.
 
 **Delivery mode (choose at add).** `<mode>` is how a finished change reaches `main`, picked per project when you add it and recorded in the registry line (`sc-project-mode.sh` parses it; `sc-spawn` records it into each ticket's meta):
 
