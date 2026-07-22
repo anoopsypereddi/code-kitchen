@@ -39,8 +39,56 @@ When `SC_HOME` is unset, it also behaves as the old whole-root override.
 ## Harness support
 
 claude, codex, opencode, and pi are all empirically verified; new harnesses get verified through a supervised trial ticket before joining the set.
+**grok** is wired end to end (detection via `GROK_AGENT=1`, launch template, model/effort flags, turn-end hook) but is **UNVERIFIED** in this souschef until a supervised trial confirms its launch/exit/busy-signature; treat it as plumbing, not a trusted adapter, until the harness-adapters skill marks it verified.
 The verified adapter knowledge - busy signatures, interrupt and exit commands, skill-invocation syntax, and per-harness quirks - lives in [`.agents/skills/harness-adapters/SKILL.md`](../.agents/skills/harness-adapters/SKILL.md).
 Launch mechanics, including the verified command templates, live in [`bin/sc-spawn.sh`](../bin/sc-spawn.sh).
+
+`config/crew-harness` is a local, gitignored file containing one adapter name for crewmate and scout launches; absent or `default` mirrors souschef's own harness.
+`config/secondmate-harness` is a separate local, gitignored file containing the adapter the primary uses to launch station-chef (secondmate) agents, optionally followed by model and effort tokens on the same line.
+The first non-empty, non-comment line is parsed as `<harness> [<model>] [<effort>]`, whitespace-separated.
+A bare `<harness>` preserves the previous behavior: harness only, no model or effort launch flag.
+When the harness token is absent or `default`, station-chef launch falls back through `config/crew-harness` and then the primary's own harness, and no model or effort is read from that file.
+`sc-harness.sh secondmate`, `secondmate-model`, and `secondmate-effort` expose the resolved harness and the optional tokens; `config/crew-harness` stays a bare adapter-name file and is never parsed for a model.
+An explicit harness argument (or `--harness`) to `sc-spawn.sh`, and explicit `--model`/`--effort` flags, still override either config file for that spawn only.
+See [`docs/examples/secondmate-harness`](examples/secondmate-harness) for a starting point to copy into local `config/secondmate-harness`.
+
+## Crew dispatch profiles (config/crew-dispatch.json)
+
+`config/crew-dispatch.json` is an optional local, gitignored file containing natural-language rules that souschef reads before dispatching a crewmate or scout.
+The shell scripts do not match those rules; souschef chooses the best matching rule with judgment, resolves that rule directly or through a supported selector (`bin/sc-dispatch-select.sh`), and passes only concrete `--harness`, `--model`, and `--effort` flags to `sc-spawn.sh`.
+When the file exists, `sc-spawn.sh` enforces that contract by refusing crewmate and scout spawns that lack an explicit harness (`--harness`, a positional adapter, or a raw launch command), so the rules are never silently skipped.
+Batch spawns satisfy the same requirement with a shared `--harness`.
+Station-chef (secondmate) spawns are exempt and still resolve through `config/secondmate-harness` and its optional model and effort tokens.
+
+```json
+{
+  "rules": [
+    {
+      "when": "<natural-language condition describing a kind of task>",
+      "use": [
+        { "harness": "<adapter>", "model": "<optional model>", "effort": "<low|medium|high|xhigh|max, optional>" }
+      ],
+      "select": "<optional strategy>",
+      "why": "<optional rationale that helps souschef choose>"
+    }
+  ],
+  "default": { "harness": "<adapter>", "model": "<optional model>", "effort": "<optional effort>" }
+}
+```
+
+Per rule, `when` and `use` are required.
+`use` may be a single profile object or an ordered array of profile objects; the single-object form stays fully backward-compatible, and every profile needs `harness`.
+`use.model`, `use.effort`, and `why` are optional.
+`select` is optional and currently supports `quota-balanced`.
+Absent `select` means use the first array element (or the only object in the single-object form); the first array element is the deterministic tie-break and the ultimate fallback.
+`default` is optional.
+An omitted model or effort means the selected harness uses its own default for that axis; a value a harness cannot accept is recorded in task meta for traceability but its launch flag is omitted.
+`quota-balanced` selection is deterministic and implemented by `bin/sc-dispatch-select.sh`, whose header owns the general-window rules, the 20-point stale-clear freshness margin, vendor-availability handling, and the degrade-to-first-element fallbacks; **quota trouble never blocks dispatch** - when the external `quota-axi` binary is absent, exits non-zero, or returns unparseable JSON, the selector logs the reason and returns the first profile.
+`quota-axi` is therefore an optional dependency: static profiles and the first-element fallback work without it.
+See [`docs/examples/crew-dispatch.json`](examples/crew-dispatch.json) for a starting point to copy into local `config/crew-dispatch.json`.
+When the file exists, bootstrap validates it with `jq`; a valid file stays silent, while malformed JSON, an unverified harness, a malformed profile, an unknown `select`, or an effort a harness cannot accept is reported as `CREW_DISPATCH: invalid config/crew-dispatch.json - ...`, and a missing `jq` routes through the normal `MISSING: jq` install-consent flow.
+Because the spawn gate is keyed only by file presence, any fallback path after a validation error still forces an explicitly resolved harness until the file is fixed or removed.
+Station-chef homes inherit this file from the primary, so a station chef's own crewmates apply the same dispatch behavior.
 
 ## Session-provider backend (tmux, herdr)
 

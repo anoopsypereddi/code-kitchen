@@ -1,6 +1,6 @@
 ---
 name: harness-adapters
-description: Agent-only reference for Souschef harness operations. Use before firing or recovering a cook or station chef, handling a trust dialog, sending a harness-specific skill invocation, interrupting or exiting an agent, resuming an exited agent, or verifying a new harness adapter. Contains verified facts for claude, codex, opencode, and pi.
+description: Agent-only reference for Souschef harness operations. Use before firing or recovering a cook or station chef, handling a trust dialog, sending a harness-specific skill invocation, interrupting or exiting an agent, resuming an exited agent, or verifying a new harness adapter. Contains verified facts for claude, codex, opencode, and pi, plus UNVERIFIED ported plumbing for grok.
 user-invocable: false
 ---
 
@@ -110,3 +110,28 @@ The decision persists per path in `~/.pi/agent/trust.json`, so later fires in th
 `sc-spawn` keeps the turn-end extension in `state/`, outside the worktree, because project-local extension files make the trust gate strictly worse and pollute the project.
 The extension must listen for pi's `turn_end` event, not `agent_end`, so the pass wakes after each completed turn instead of only when the whole agent run exits.
 Pi sets `PI_CODING_AGENT=true` for its children; this is its harness-detection env marker.
+
+## grok (UNVERIFIED - plumbing ported from firstmate, not yet trialed in this Souschef)
+
+Grok Build TUI (`grok`), a Claude-Code-compatible CLI from xAI. The full spawn path is wired -
+detection (`GROK_AGENT=1`), launch template (`grok --always-approve __MODELFLAG____EFFORTFLAG__"$(cat <brief>)"`),
+model/effort flags, and the global turn-end hook - but **grok has NOT been empirically verified in this Souschef home**.
+Do NOT fire a grok cook or station chef until a supervised trial confirms its launch, exit, and busy-pane signature here (AGENTS.md section 4).
+Until then, treat grok as an unverified adapter: if `config/crew-harness` or a dispatch profile names it, tell the Chef and raise a decision for a supervised verification rather than firing blind.
+
+The facts below are ported from firstmate's verified adapter (grok 0.2.73-0.2.103) and are the starting hypotheses to confirm during that trial, not confirmed-here facts:
+
+| Fact | Value (to verify) |
+|---|---|
+| Busy-pane signature | `Ctrl+c:cancel` (the mid-turn cancel hint in grok's keybind bar; the spinner is a braille glyph + `<status>… N.Ns` + `[stop]`). ASCII `Ctrl+c:cancel` is the busy regex, avoiding braille locale fragility. |
+| Exit command | `/exit` typed into the composer exits cleanly (prints `Resume this session with: grok --resume <session-id>`); `Ctrl+Q` double-press within 1000ms is a fallback; `Ctrl+C` is interrupt, not exit. |
+| Interrupt | single `Ctrl+C` (cancels the current turn). `Esc` only moves focus to the scrollback; it does NOT interrupt. |
+| Skill invocation | `/<skill>` (e.g. `/code-review`), same form as claude. Opens a slash-autocomplete popup, so a too-fast Enter selects the popup entry instead of sending; an argument-taking command needs a genuine second Enter. |
+| Autonomy | `--always-approve` auto-approves every tool execution (the targeted equivalent of claude's `--dangerously-skip-permissions`). `--permission-mode bypassPermissions` is the stronger equivalent. |
+| Env marker | `GROK_AGENT=1`, set for child/tool processes. grok does NOT set `CLAUDECODE`, so the marker is unambiguous. |
+| Resume | `grok --resume <session-id>` (id printed on exit) or `grok -c` / `--continue` (most recent for the cwd). |
+| Launch-profile axes | `--model <model>`; effort via `--reasoning-effort <low\|medium\|high>` (per firstmate 0.2.99 the ceiling is `high`; `xhigh`/`max` are rejected, so `sc-spawn` omits them). |
+
+Turn-end hook (ported): grok fires a `Stop` hook at every turn boundary. grok loads PROJECT hooks only after the folder is granted hook-trust (which Souschef will not establish by editing grok's managed trust store), but GLOBAL hooks in `~/.grok/hooks/` are always trusted. So `sc-spawn` installs ONE Souschef-owned global hook (`~/.grok/hooks/sc-turn-end.{sh,json}`) that is a guarded no-op for every non-Souschef grok session: it fires only when the current workspace holds a `.sc-grok-turnend` token pointer matching an auth file under `~/.grok/hooks/sc-turn-end.d/`. `sc-spawn` writes the per-task pointer (`<worktree>/.sc-grok-turnend`, git info/exclude'd) and the matching registry entry naming this task's `state/<id>.turn-ended`; `sc-teardown` removes both the pointer and the per-task auth file. Station-chef spawns skip the pointer (idle panes are healthy).
+
+Startup dialog to confirm during the trial: grok's "Run Grok Build in a project directory?" picker appears only when launched from a non-project directory; `sc-spawn` launches inside the worktree (a git root), so it should not appear.

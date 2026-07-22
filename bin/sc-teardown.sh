@@ -404,6 +404,18 @@ validate_souschef_home_children_removal() {
   done
 }
 
+# Remove a grok task's per-task turn-end auth file from the souschef-owned global
+# hook registry (~/.grok/hooks/sc-turn-end.d/, keyed by the token recorded at
+# spawn). The global hook script/json and its .d dir are shared across tasks, so
+# only the per-task auth file is removed. No-op for non-grok tasks (no token file).
+remove_grok_turnend_auth() {
+  local state_dir=$1 id=$2 token hooks_dir
+  token=$(cat "$state_dir/$id.grok-turnend-token" 2>/dev/null || true)
+  case "$token" in ''|*[!A-Za-z0-9._-]*) return 0 ;; esac
+  hooks_dir="${GROK_HOME:-$HOME/.grok}/hooks/sc-turn-end.d"
+  rm -f "$hooks_dir/$token"
+}
+
 cleanup_souschef_home_children() {
   local home=$1 sub_state child_meta child_id child_t child_wt child_proj child_kind child_home child_backend
   sub_state="$home/state"
@@ -429,14 +441,15 @@ cleanup_souschef_home_children() {
       fi
     elif [ -n "$child_wt" ] && [ -d "$child_wt" ]; then
       validate_child_worktree_for_removal "$child_wt" "$child_proj" >/dev/null || return 1
-      rm -f "$child_wt/.claude/settings.local.json" "$child_wt/.opencode/plugins/sc-turn-end.js"
+      rm -f "$child_wt/.claude/settings.local.json" "$child_wt/.opencode/plugins/sc-turn-end.js" "$child_wt/.sc-grok-turnend"
       if [ -n "$child_proj" ] && [ -d "$child_proj" ]; then
         "$SC_WORKTREE" return --force "$child_wt" || safe_rm_rf_child_worktree "$child_wt" "$child_proj"
       else
         safe_rm_rf_child_worktree "$child_wt" "$child_proj"
       fi
     fi
-    rm -f "$sub_state/$child_id.status" "$sub_state/$child_id.turn-ended" "$sub_state/$child_id.check.sh" "$sub_state/$child_id.check-trust" "$sub_state/$child_id.meta" "$sub_state/$child_id.pi-ext.ts"
+    remove_grok_turnend_auth "$sub_state" "$child_id"
+    rm -f "$sub_state/$child_id.status" "$sub_state/$child_id.turn-ended" "$sub_state/$child_id.check.sh" "$sub_state/$child_id.check-trust" "$sub_state/$child_id.meta" "$sub_state/$child_id.pi-ext.ts" "$sub_state/$child_id.grok-turnend-token"
   done
 }
 
@@ -485,8 +498,9 @@ if [ -d "$WT" ] && [ "$FORCE" != "--force" ]; then
       exit 1
     fi
   else
-    # The sc-spawn hook file is ours, never work product; ignore it in the dirty check.
-    dirty=$(git -C "$WT" status --porcelain 2>/dev/null | grep -vE '^\?\? \.claude/' | head -1 || true)
+    # The sc-spawn hook files are ours, never work product; ignore them in the dirty
+    # check (.claude/ and the grok per-task pointer).
+    dirty=$(git -C "$WT" status --porcelain 2>/dev/null | grep -vE '^\?\? (\.claude/|\.sc-grok-turnend$)' | head -1 || true)
     # Reachability test: is HEAD reachable from ANY remote-tracking branch? Empty
     # means the work is already pushed (a fork is a remote too, so upstream-
     # contribution PRs pushed to a fork pass here). Non-empty does NOT prove the work
@@ -542,8 +556,8 @@ if [ -d "$WT" ] && [ "$KIND" != secondmate ]; then
       git -C "$WT" branch -D "$branch" >/dev/null 2>&1 || true
     fi
   fi
-  # Remove our hook file so a reused pool worktree cannot fire signals for a dead task.
-  rm -f "$WT/.claude/settings.local.json" "$WT/.opencode/plugins/sc-turn-end.js"
+  # Remove our hook files so a reused pool worktree cannot fire signals for a dead task.
+  rm -f "$WT/.claude/settings.local.json" "$WT/.opencode/plugins/sc-turn-end.js" "$WT/.sc-grok-turnend"
   # Kills remaining processes in the worktree (including the agent), then removes
   # the worktree and releases its lease (bin/sc-worktree.sh return). The dirty/
   # unlanded refusal above has already passed, so --force's discard is intended.
@@ -561,7 +575,8 @@ if [ "$KIND" = secondmate ]; then
   remove_souschef_home "$HOME_PATH" "secondmate home" "$ID"
   remove_secondmate_registry_entry "$ID"
 fi
-rm -f "$STATE/$ID.status" "$STATE/$ID.turn-ended" "$STATE/$ID.check.sh" "$STATE/$ID.check-trust" "$STATE/$ID.meta" "$STATE/$ID.pi-ext.ts"
+remove_grok_turnend_auth "$STATE" "$ID"
+rm -f "$STATE/$ID.status" "$STATE/$ID.turn-ended" "$STATE/$ID.check.sh" "$STATE/$ID.check-trust" "$STATE/$ID.meta" "$STATE/$ID.pi-ext.ts" "$STATE/$ID.grok-turnend-token"
 if [ "$KIND" != scout ] && [ "$KIND" != secondmate ] && [ "$MODE" != local-only ]; then
   "$SC_ROOT/bin/sc-fleet-sync.sh" "$PROJ" || true
 fi
