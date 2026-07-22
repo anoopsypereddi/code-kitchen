@@ -143,8 +143,10 @@ sc_check_snapshot_prepare() {
   SC_CHECK_SNAPSHOT=$(mktemp "$state/.sc-check.XXXXXX") || return 1
   cp "$check" "$SC_CHECK_SNAPSHOT" || { sc_check_snapshot_cleanup; return 1; }
   chmod 0600 "$SC_CHECK_SNAPSHOT" || { sc_check_snapshot_cleanup; return 1; }
-  [ -f "$SC_CHECK_SNAPSHOT" ] && [ ! -L "$SC_CHECK_SNAPSHOT" ] \
-    || { sc_check_snapshot_cleanup; return 1; }
+  if ! { [ -f "$SC_CHECK_SNAPSHOT" ] && [ ! -L "$SC_CHECK_SNAPSHOT" ]; }; then
+    sc_check_snapshot_cleanup
+    return 1
+  fi
   [ "$(sc_check_file_mode "$SC_CHECK_SNAPSHOT")" = 600 ] \
     || { sc_check_snapshot_cleanup; return 1; }
   [ "$(sc_check_file_device "$SC_CHECK_SNAPSHOT")" = "$state_device" ] \

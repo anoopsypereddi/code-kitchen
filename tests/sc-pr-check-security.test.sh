@@ -72,7 +72,9 @@ sc_check_register "$a_state" ok || fail "(A) sc_check_register must succeed on a
 [ "$(sc_check_file_mode "$a_state/ok.check-trust")" = 600 ] || fail "(A) trust file must be mode 0600"
 sc_check_registered "$a_state" ok || fail "(A) a freshly registered check must read as registered"
 sc_check_snapshot_prepare "$a_state" ok || fail "(A) a registered check must prepare a snapshot"
-[ -n "$SC_CHECK_SNAPSHOT" ] && [ -f "$SC_CHECK_SNAPSHOT" ] || fail "(A) snapshot path must exist"
+if ! { [ -n "$SC_CHECK_SNAPSHOT" ] && [ -f "$SC_CHECK_SNAPSHOT" ]; }; then
+  fail "(A) snapshot path must exist"
+fi
 [ "$SC_CHECK_SNAPSHOT" != "$a_state/ok.check.sh" ] || fail "(A) snapshot must be a COPY, not the live file"
 bash "$SC_CHECK_SNAPSHOT" >/dev/null
 [ -e "$a_state/ok.sentinel" ] || fail "(A) the snapshot copy must be runnable"
