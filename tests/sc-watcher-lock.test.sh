@@ -7,6 +7,10 @@ set -u
 
 # shellcheck source=tests/wake-helpers.sh
 . "$(dirname "${BASH_SOURCE[0]}")/wake-helpers.sh"
+# The watcher runs a state/*.check.sh only if it is registered + hash-bound, so
+# tests that expect a check to fire must register it (as sc-pr-check.sh does).
+# shellcheck source=bin/sc-check-lib.sh
+. "$ROOT/bin/sc-check-lib.sh"
 
 WATCH="$ROOT/bin/sc-watch.sh"
 WATCH_ARM="$ROOT/bin/sc-watch-arm.sh"
@@ -537,7 +541,8 @@ test_arm_propagates_immediate_wake_before_confirmation() {
 #!/usr/bin/env bash
 printf 'merged: https://example.test/pr/7\n'
 SH
-  chmod +x "$check_file"
+  chmod 0600 "$check_file"
+  sc_check_register "$state" task || fail "could not register the check for the arm wake test"
   rc=0
   PATH="$fakebin:$PATH" SC_STATE_OVERRIDE="$state" SC_GUARD_GRACE=0 SC_POLL=5 SC_SIGNAL_GRACE=1 SC_CHECK_INTERVAL=0 SC_HEARTBEAT=999999 "$WATCH_ARM" > "$armout" || rc=$?
   [ "$rc" -eq 0 ] || fail "arm returned non-zero for an immediate wake (status $rc): $(cat "$armout")"

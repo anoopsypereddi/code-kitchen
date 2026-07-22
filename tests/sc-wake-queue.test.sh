@@ -10,6 +10,10 @@ set -u
 
 # shellcheck source=tests/wake-helpers.sh
 . "$(dirname "${BASH_SOURCE[0]}")/wake-helpers.sh"
+# The watcher runs a state/*.check.sh only if it is registered + hash-bound, so
+# tests that expect a check to fire must register it (as sc-pr-check.sh does).
+# shellcheck source=bin/sc-check-lib.sh
+. "$ROOT/bin/sc-check-lib.sh"
 
 WATCH="$ROOT/bin/sc-watch.sh"
 DRAIN="$ROOT/bin/sc-wake-drain.sh"
@@ -106,7 +110,8 @@ test_check_output_is_queued() {
 #!/usr/bin/env bash
 printf 'merged: https://example.test/pr/1\n'
 SH
-  chmod +x "$check_file"
+  chmod 0600 "$check_file"
+  sc_check_register "$state" task || fail "could not register the check for the wake test"
   PATH="$fakebin:$PATH" SC_STATE_OVERRIDE="$state" SC_POLL=1 SC_SIGNAL_GRACE=1 SC_CHECK_INTERVAL=0 SC_HEARTBEAT=999999 "$WATCH" > "$out" &
   wait_for_exit "$!" 40 || fail "watcher did not exit for check output"
   grep -F "check: $check_file: merged: https://example.test/pr/1" "$out" >/dev/null || fail "watcher did not print check wake"
