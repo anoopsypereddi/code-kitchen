@@ -2,14 +2,14 @@
 
 Thanks for wanting to contribute.
 
-Validate your change locally before you open a PR: run the toolbelt checks below (shellcheck, `bash -n`, and the behavior tests) and get them all green.
+Validate your change locally before you open a PR: run the toolbelt checks below (`bin/sc-lint.sh`, `bash -n`, and the behavior tests) and get them all green.
 CI runs the same checks on every PR targeting `main`, so a locally-green branch is the fastest path to review.
 
 ## Workflow
 
 1. Fork the repo, then clone your fork (or set your local `origin` to your fork).
 2. Create a branch and make your changes.
-3. Validate locally: run the toolbelt checks under [Development](#development) and get shellcheck, `bash -n`, and the behavior tests all green.
+3. Validate locally: run the toolbelt checks under [Development](#development) and get `bin/sc-lint.sh`, `bash -n`, and the behavior tests all green.
 4. Commit your changes.
 5. Push the branch to your fork:
 
@@ -34,9 +34,10 @@ A maintainer reviews and merges. There is no separate validation gate to push th
 - Helper scripts in `bin/` are plain bash.
   Each starts with a usage header comment; keep it accurate when you change behavior.
   Test scripts and helpers in `tests/` are plain bash too.
-  `shellcheck bin/*.sh tests/*.sh setup.sh` must pass, and CI enforces it.
-  Scripts must also parse under stock macOS bash 3.2, the oldest supported target - avoid bash-4+ features, and never nest a here-doc inside `$(...)` (bash 3.2 mis-parses it; assemble such text without command substitution).
-  CI runs `bash -n` over every script on a macOS runner (bash 3.2.57) to enforce this.
+  `bin/sc-lint.sh` is the single owner of the lint definition (the file set, the ShellCheck config, and a pinned ShellCheck version) and must pass; CI runs the exact same `bin/sc-lint.sh`, so a locally-green run cannot be rejected by CI for a lint finding.
+  It pins ShellCheck (see `REQUIRED_SHELLCHECK` in the script) so local and CI resolve the identical rule set; if your `shellcheck` is a different version, install the pinned one (`bin/sc-install-shellcheck.sh <dir>`, or your package manager).
+  Scripts must also parse and run under stock macOS bash 3.2, the oldest supported target - avoid bash-4+ features, and never nest a here-doc inside `$(...)` (bash 3.2 mis-parses it; assemble such text without command substitution).
+  CI runs `bash -n` over every script on a macOS runner (bash 3.2.57), and a second macOS lane runs a portable subset of the behavior tests under that same stock bash to catch runtime (not just parse) regressions.
 - Changes to harness adapters (launch templates in `bin/sc-spawn.sh`, facts in `.agents/skills/harness-adapters/SKILL.md`) must be verified empirically against the real harness, never written from documentation alone.
 - In Markdown, put each full sentence on its own line.
 
@@ -50,8 +51,9 @@ Check and test the toolbelt before pushing:
 
 ```sh
 bash -n bin/*.sh setup.sh                 # syntax-check the toolbelt (run under bash 3.2 too; CI does on macOS)
-shellcheck bin/*.sh tests/*.sh setup.sh   # lint the toolbelt, behavior tests, and setup.sh; CI enforces this
-for test_script in tests/*.test.sh; do "$test_script"; done   # behavior tests, matching CI
+bin/sc-lint.sh                            # lint the toolbelt, behavior tests, and setup.sh (single lint owner; CI runs the same)
+bin/sc-test-run.sh                        # run the behavior tests serially, matching CI
+bin/sc-test-run.sh --check-coverage       # prove every tests/*.test.sh is in the executed set (CI's coverage guard)
 tests/sc-wake-queue.test.sh               # durable wake queue losslessness, catch-up, double-drain, duplicate-collapse, and drain liveness guard tests
 tests/sc-watcher-lock.test.sh             # pass singleton, lock-race, watch-arm liveness, and guard-warning tests
 tests/sc-daemon.test.sh                   # sub-expediter classifier, /afk presence-gating, max-defer, composer, and sc-send submit tests
