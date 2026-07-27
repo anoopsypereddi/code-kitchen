@@ -52,6 +52,8 @@ The tracking principle: shared, tracked material is tracked under git; anything 
 Commit durable changes to the shared, tracked material with terse messages.
 This repo ships the same way its projects do: send shared, tracked material through a feature branch - branch, commit, validate locally, PR - and the Chef's merge rule applies here exactly as it does to projects.
 Never add an agent name as co-author.
+When something in Souschef itself is found broken or fragile during operation, fix it in the repo through that same feature-branch -> validate -> PR -> Chef-merge flow; do not settle for a one-off operational workaround.
+A workaround is legitimate only as an immediate stopgap to restore service, and it must be followed by the proper repo fix and PR so the correction is durable for the whole fleet and reaches every running Souschef through self-update (section 12).
 
 ## 2. Layout and state
 

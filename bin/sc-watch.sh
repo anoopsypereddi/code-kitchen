@@ -29,25 +29,50 @@ mkdir -p "$STATE"
 WATCH_LOCK="$STATE/.watch.lock"
 WATCH_PATH="$SCRIPT_DIR/sc-watch.sh"
 WATCHER_STALE_GRACE=${SC_WATCHER_STALE_GRACE:-${SC_GUARD_GRACE:-300}}
-if ! sc_lock_try_acquire "$WATCH_LOCK"; then
-  BEAT="$STATE/.last-watcher-beat"
-  if [ -n "${SC_LOCK_HELD_PID:-}" ]; then
-    if [ -e "$BEAT" ]; then
-      beat_age=$(sc_path_age "$BEAT")
-      if [ "$beat_age" -ge "$WATCHER_STALE_GRACE" ]; then
-        echo "watcher: lock held by live pid $SC_LOCK_HELD_PID but heartbeat is stale for ${beat_age}s (>${WATCHER_STALE_GRACE}s); inspect or stop that watcher before re-arming." >&2
-        exit 1
-      fi
-    elif [ "$(sc_path_age "$WATCH_LOCK")" -ge "$WATCHER_STALE_GRACE" ]; then
-      echo "watcher: lock held by live pid $SC_LOCK_HELD_PID but no heartbeat exists; inspect or stop that watcher before re-arming." >&2
+BEAT="$STATE/.last-watcher-beat"
+
+# A held watch lock is safe to reclaim once no watcher has beaten within the
+# grace window: a fresh beacon means a healthy watcher (leave it), a stale one
+# means whoever holds the lock is not supervising. "Stale" covers all three ways
+# a reaped watcher strands its lock: a dead holder pid, a REUSED/recycled pid
+# that now maps to some unrelated live process (which sc_lock_try_acquire alone
+# reads as a valid live holder and refuses), and a genuinely wedged watcher.
+# Reclaiming here turns the old exit-1 dead-lock (which forced a manual lock
+# clear on every reap) into automatic self-healing on the next re-arm. Safety is
+# preserved by the self-eviction guard in the poll loop below: if a real watcher
+# somehow still holds the lock, it stands down the instant the lock stops naming
+# it, so reclaiming can never leave two live watchers running.
+watch_lock_is_stale() {
+  if [ -e "$BEAT" ]; then
+    [ "$(sc_path_age "$BEAT")" -ge "$WATCHER_STALE_GRACE" ]
+  else
+    [ "$(sc_path_age "$WATCH_LOCK")" -ge "$WATCHER_STALE_GRACE" ]
+  fi
+}
+
+# sc_lock_try_acquire already steals a plainly dead-pid lock on its own; this
+# loop adds recovery for the live/recycled-pid + stale-beacon case it refuses.
+reclaim_attempts=0
+until sc_lock_try_acquire "$WATCH_LOCK"; do
+  held=${SC_LOCK_HELD_PID:-}
+  if watch_lock_is_stale; then
+    if [ "$reclaim_attempts" -ge 5 ]; then
+      echo "watcher: could not reclaim stale watch lock $WATCH_LOCK after ${reclaim_attempts} attempts; clear it and re-arm." >&2
       exit 1
     fi
-    echo "watcher: already running pid $SC_LOCK_HELD_PID"
+    reclaim_attempts=$((reclaim_attempts + 1))
+    sc_lock_remove_path "$WATCH_LOCK" 2>/dev/null || true
+    continue
+  fi
+  # Fresh beacon: a healthy watcher genuinely holds the singleton. Stand down so
+  # exactly one watcher runs (the normal duplicate-start no-op).
+  if [ -n "$held" ]; then
+    echo "watcher: already running pid $held"
   else
     echo "watcher: already running"
   fi
   exit 0
-fi
+done
 trap 'sc_lock_release "$WATCH_LOCK"' EXIT
 # This watcher's own pid, as recorded in the lock by sc_lock_claim (which writes
 # ${BASHPID:-$$} from this same main shell). Read directly, never via a command

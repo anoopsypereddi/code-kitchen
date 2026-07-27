@@ -68,21 +68,36 @@ test_stale_watch_lock_reclaimed() {
   pass "killed watcher stale lock is reclaimed"
 }
 
-test_live_stale_watch_lock_is_actionable() {
-  local dir state fakebin out err status
+test_live_stale_watch_lock_reclaimed() {
+  # A watch lock held by a LIVE pid that is NOT a watcher (a reaped watcher's pid
+  # reused by an unrelated process) with a stale-beyond-grace beacon must be
+  # reclaimed, not dead-locked. sc_lock_try_acquire alone reads the live pid as a
+  # valid holder and refuses, so this exercises the watcher's own stale-lock
+  # recovery. The old behavior exited 1 ("heartbeat is stale ... inspect or stop"),
+  # which forced a manual lock clear after every reap; supervision must self-heal.
+  local dir state fakebin out err pid live lock_pid
   dir=$(make_case live-stale-lock)
   state="$dir/state"
   fakebin="$dir/fakebin"
   out="$dir/watch.out"
   err="$dir/watch.err"
+  # A real live process, unrelated to any watcher, standing in for a recycled pid.
+  sleep 30 &
+  live=$!
   mkdir "$state/.watch.lock"
-  printf '%s\n' "$$" > "$state/.watch.lock/pid"
+  printf '%s\n' "$live" > "$state/.watch.lock/pid"
   touch -t 200001010000 "$state/.last-watcher-beat"
-  status=0
-  PATH="$fakebin:$PATH" SC_STATE_OVERRIDE="$state" SC_GUARD_GRACE=1 SC_POLL=5 SC_SIGNAL_GRACE=1 SC_CHECK_INTERVAL=999999 SC_HEARTBEAT=999999 "$WATCH" > "$out" 2> "$err" || status=$?
-  [ "$status" -ne 0 ] || fail "watcher silently no-opped behind a live stale holder"
-  grep -F 'heartbeat is stale' "$err" >/dev/null || fail "watcher did not explain the stale live lock"
-  pass "live watcher lock with stale heartbeat is actionable"
+  PATH="$fakebin:$PATH" SC_STATE_OVERRIDE="$state" SC_GUARD_GRACE=1 SC_POLL=5 SC_SIGNAL_GRACE=1 SC_CHECK_INTERVAL=999999 SC_HEARTBEAT=999999 "$WATCH" > "$out" 2> "$err" &
+  pid=$!
+  sleep 0.5
+  is_live_non_zombie "$pid" || fail "watcher did not reclaim a stale lock held by a live recycled pid"
+  lock_pid=$(cat "$state/.watch.lock/pid" 2>/dev/null || true)
+  [ "$lock_pid" != "$live" ] || fail "stale live-pid watch lock was not reclaimed (still $live)"
+  ! grep -F 'heartbeat is stale' "$err" >/dev/null || fail "watcher dead-locked on a stale live-pid lock instead of reclaiming"
+  is_live_non_zombie "$live" || fail "watcher killed the unrelated live pid instead of just reclaiming the lock"
+  kill "$pid" "$live" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  pass "stale live-pid watch lock is reclaimed instead of dead-locking"
 }
 
 test_guard_warnings() {
@@ -499,13 +514,19 @@ test_arm_starts_and_self_heals() {
   pass "arm starts+confirms a fresh watcher on a clean lock and self-heals a dead-pid lock (never healthy off a dead pid)"
 }
 
-test_arm_hup_cleans_child_and_temp_output() {
+test_arm_hup_leaves_watcher_and_cleans_temp() {
+  # HUP/TERM to the arm (e.g. a background-job harness reaping the tracked task)
+  # must NOT take the detached watcher down with it - supervision has to survive
+  # an arm teardown, and the next re-arm will observe the watcher as healthy. The
+  # arm must still exit with the signal status and drop its own temp output. The
+  # OLD behavior killed the child on HUP, which is exactly what silently took
+  # supervision offline when a harness reaped the arm's process group.
   local dir state fakebin armout i armpid lock_pid status
   dir=$(make_case arm-hup-cleanup)
   state="$dir/state"
   fakebin="$dir/fakebin"
   armout="$dir/arm.out"
-  PATH="$fakebin:$PATH" SC_STATE_OVERRIDE="$state" SC_POLL=5 SC_SIGNAL_GRACE=1 SC_CHECK_INTERVAL=999999 SC_HEARTBEAT=999999 "$WATCH_ARM" > "$armout" &
+  PATH="$fakebin:$PATH" SC_STATE_OVERRIDE="$state" SC_POLL=1 SC_SIGNAL_GRACE=1 SC_CHECK_INTERVAL=999999 SC_HEARTBEAT=999999 "$WATCH_ARM" > "$armout" &
   armpid=$!
   i=0
   while [ "$i" -lt 80 ]; do
@@ -513,20 +534,21 @@ test_arm_hup_cleans_child_and_temp_output() {
     sleep 0.1
     i=$((i + 1))
   done
-  grep -qF 'watcher: started pid=' "$armout" || fail "arm did not start before HUP cleanup check"
+  grep -qF 'watcher: started pid=' "$armout" || fail "arm did not start before HUP check"
   lock_pid=$(cat "$state/.watch.lock/pid" 2>/dev/null || true)
   kill -HUP "$armpid" 2>/dev/null || fail "could not send HUP to arm"
   wait_for_exit "$armpid" 80
   status=$?
   [ "$status" -eq 129 ] || fail "arm did not exit with HUP status (got $status)"
-  i=0
-  while [ "$i" -lt 80 ] && is_live_non_zombie "$lock_pid"; do
-    sleep 0.1
-    i=$((i + 1))
-  done
-  ! is_live_non_zombie "$lock_pid" || fail "HUP cleanup left watcher child running"
-  ! ls "$state"/.watch-arm-output.* >/dev/null 2>&1 || fail "HUP cleanup left temp output behind"
-  pass "arm cleans child watcher and temp output on HUP"
+  ! ls "$state"/.watch-arm-output.* >/dev/null 2>&1 || fail "HUP left temp output behind"
+  # The detached watcher must still be alive after the arm is gone, and keep
+  # beating (poll=1s): sample twice so this proves a running loop, not a race.
+  is_live_non_zombie "$lock_pid" || fail "HUP took the detached watcher down with the arm"
+  sleep 2
+  is_live_non_zombie "$lock_pid" || fail "detached watcher died shortly after the arm's HUP"
+  kill "$lock_pid" 2>/dev/null || true
+  wait "$lock_pid" 2>/dev/null || true
+  pass "arm HUP leaves the detached watcher running and cleans its temp output"
 }
 
 test_arm_propagates_immediate_wake_before_confirmation() {
@@ -585,26 +607,28 @@ test_arm_waits_for_peer_beacon_after_child_stands_down() {
 
 test_arm_fails_loud_when_no_fresh_watcher_confirmable() {
   local dir state fakebin armout live armpid status
-  dir=$(make_case arm-failed-stale)
+  dir=$(make_case arm-failed-fresh)
   state="$dir/state"
   fakebin="$dir/fakebin"
   armout="$dir/arm.out"
   sleep 300 &
   live=$!
   # A live process holds the lock but is NOT a confirmable watcher (no identity),
-  # and the beacon is stale. The fresh child cannot steal a LIVE lock, so no
-  # watcher can ever be confirmed - the honest answer is FAILED, not healthy.
+  # and the beacon is FRESH. A fresh beacon means something is actively beating,
+  # so stale-lock recovery deliberately does NOT stomp it (that would risk a
+  # duplicate) and the fresh child cannot steal a live lock - so no watcher can be
+  # confirmed and the honest answer is FAILED, not healthy or a reclaim.
   mkdir "$state/.watch.lock"
   printf '%s\n' "$live" > "$state/.watch.lock/pid"
-  touch -t 200001010000 "$state/.last-watcher-beat"
-  PATH="$fakebin:$PATH" SC_STATE_OVERRIDE="$state" SC_POLL=5 SC_SIGNAL_GRACE=1 SC_CHECK_INTERVAL=999999 SC_HEARTBEAT=999999 SC_ARM_CONFIRM_TIMEOUT=3 "$WATCH_ARM" > "$armout" &
+  touch "$state/.last-watcher-beat"
+  PATH="$fakebin:$PATH" SC_STATE_OVERRIDE="$state" SC_GUARD_GRACE=300 SC_POLL=5 SC_SIGNAL_GRACE=1 SC_CHECK_INTERVAL=999999 SC_HEARTBEAT=999999 SC_ARM_CONFIRM_TIMEOUT=3 "$WATCH_ARM" > "$armout" &
   armpid=$!
   wait_for_exit "$armpid" 120
   status=$?
   [ "$status" -ne 124 ] || fail "arm never returned for an unconfirmable watcher"
   [ "$status" -ne 0 ] || fail "arm exited zero when no fresh watcher could be confirmed"
   grep -F 'watcher: FAILED - no live watcher with a fresh beacon' "$armout" >/dev/null || fail "arm did not print the FAILED line"
-  ! grep -qF 'watcher: healthy' "$armout" || fail "arm reported healthy off a stale beacon"
+  ! grep -qF 'watcher: healthy' "$armout" || fail "arm reported healthy off a non-watcher holder"
   ! grep -qF 'watcher: started' "$armout" || fail "arm falsely reported started"
   is_live_non_zombie "$live" || fail "arm killed the unrelated live lock holder"
   kill "$live" 2>/dev/null || true
@@ -612,9 +636,43 @@ test_arm_fails_loud_when_no_fresh_watcher_confirmable() {
   pass "arm reports FAILED and exits non-zero when no fresh watcher can be confirmed"
 }
 
+test_arm_reclaims_stale_live_lock() {
+  # The ARM path for the Chef's note: a reaped watcher strands a lock whose pid is
+  # a live (recycled) process and whose beacon is stale-beyond-grace. The arm must
+  # RECLAIM it and confirm a fresh live watcher (started), never dead-lock on
+  # FAILED forcing a manual lock clear, and never kill the unrelated live holder.
+  local dir state fakebin armout live armpid i lock_pid
+  dir=$(make_case arm-reclaim-stale)
+  state="$dir/state"
+  fakebin="$dir/fakebin"
+  armout="$dir/arm.out"
+  sleep 300 &
+  live=$!
+  mkdir "$state/.watch.lock"
+  printf '%s\n' "$live" > "$state/.watch.lock/pid"
+  touch -t 200001010000 "$state/.last-watcher-beat"
+  PATH="$fakebin:$PATH" SC_HOME="$dir" SC_GUARD_GRACE=1 SC_POLL=5 SC_SIGNAL_GRACE=1 SC_CHECK_INTERVAL=999999 SC_HEARTBEAT=999999 "$WATCH_ARM" > "$armout" &
+  armpid=$!
+  i=0
+  while [ "$i" -lt 80 ]; do
+    grep -qF 'watcher: started pid=' "$armout" 2>/dev/null && break
+    sleep 0.1
+    i=$((i + 1))
+  done
+  grep -qF 'watcher: started pid=' "$armout" || fail "arm did not reclaim the stale live-pid lock and start a watcher"
+  ! grep -qF 'watcher: FAILED' "$armout" || fail "arm dead-locked (FAILED) on a stale live-pid lock instead of reclaiming"
+  lock_pid=$(cat "$state/.watch.lock/pid" 2>/dev/null || true)
+  [ "$lock_pid" != "$live" ] || fail "arm did not replace the stale live-pid lock"
+  kill -0 "$lock_pid" 2>/dev/null || fail "arm's reclaimed-started watcher is not actually alive"
+  is_live_non_zombie "$live" || fail "arm killed the unrelated live lock holder while reclaiming"
+  kill "$armpid" "$lock_pid" "$live" 2>/dev/null || true
+  wait "$armpid" 2>/dev/null || true
+  pass "arm reclaims a stale live-pid lock and confirms a fresh watcher"
+}
+
 test_singleton_start
 test_stale_watch_lock_reclaimed
-test_live_stale_watch_lock_is_actionable
+test_live_stale_watch_lock_reclaimed
 test_guard_warnings
 test_lock_single_winner_under_concurrency
 test_lock_steals_dead_pid_lock
@@ -628,7 +686,8 @@ test_watch_restart_rejects_reused_pid
 test_watcher_self_evicts_on_lock_takeover
 test_arm_reports_healthy_for_live_fresh_watcher
 test_arm_starts_and_self_heals
-test_arm_hup_cleans_child_and_temp_output
+test_arm_hup_leaves_watcher_and_cleans_temp
 test_arm_propagates_immediate_wake_before_confirmation
 test_arm_waits_for_peer_beacon_after_child_stands_down
 test_arm_fails_loud_when_no_fresh_watcher_confirmable
+test_arm_reclaims_stale_live_lock
