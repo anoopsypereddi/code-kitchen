@@ -8,7 +8,13 @@
 # liveness beacon (state/.last-watcher-beat, touched every poll cycle) is
 # missing or older than SC_GUARD_GRACE seconds, prints a loud, clearly delimited
 # banner so the agent cannot skim past it in the tool output of whatever it was
-# doing - the one channel every harness has. Normal wake handling (watcher
+# doing - the one channel every harness has. The full banner is emitted once per
+# distinct staleness episode in this home (keyed to beacon mtime or absence);
+# later guarded commands in the same episode print a one-line reminder instead,
+# so a single incident does not burn context on repeated banners. Episode state
+# lives only in state/.guard-watcher-stale-banner (volatile, one line) and is
+# cleared when the home leaves the unhealthy state. Independent alarms (queued
+# wakes, worktree tangle) are never deduped. Normal wake handling (watcher
 # briefly down between a wake and its re-arm) stays inside the grace window and
 # stays silent. Always exits 0: the guard warns, it never blocks.
 set -u
@@ -82,22 +88,39 @@ if [ -e "$BEAT" ]; then
 fi
 
 # No fresh watcher with tasks in flight is the dangerous state: emit a prominent,
-# bordered banner FIRST so it reads as an alarm, not a buried stderr line.
+# bordered banner FIRST so it reads as an alarm, not a buried stderr line. The
+# full banner announces each distinct staleness episode once (keyed to the
+# beacon's mtime, or its absence); repeat guarded commands inside the same
+# episode get a one-line reminder instead.
+STALE_BANNER_MARKER="$STATE/.guard-watcher-stale-banner"
 if [ "$watcher_fresh" = false ]; then
-  if "$queue_pending"; then
-    fix='After draining queued wakes, re-arm the watcher: run bin/sc-watch-arm.sh as the harness-tracked background task (never a shell & that gets reaped).'
+  if [ -e "$BEAT" ]; then
+    episode_key="beat:$(stat_mtime "$BEAT" 2>/dev/null || echo unknown)"
   else
-    fix='Re-arm it NOW: run bin/sc-watch-arm.sh as the harness-tracked background task (never a shell & that gets reaped).'
+    episode_key="beat:absent"
   fi
-  rule='━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
-  {
-    printf '●%s\n' "$rule"
-    printf '●  WATCHER DOWN - SUPERVISION IS OFF\n'
-    printf '●  %s task(s) in flight, but no watcher has a fresh beacon (last beat: %s, grace %ss).\n' "$in_flight" "$beacon_desc" "$GRACE"
-    printf '●  Trust bin/sc-watch-arm.sh for the true state: it confirms a live watcher and a fresh beacon, or fails loudly.\n'
-    printf '●  %s\n' "$fix"
-    printf '●%s\n' "$rule"
-  } >&2
+  if [ "$(cat "$STALE_BANNER_MARKER" 2>/dev/null || true)" = "$episode_key" ]; then
+    printf '● watcher still down (%s task(s) in flight, last beat: %s) - re-arm: bin/sc-watch-arm.sh as its own harness-tracked background task.\n' \
+      "$in_flight" "$beacon_desc" >&2
+  else
+    if "$queue_pending"; then
+      fix='After draining queued wakes, re-arm the watcher: run bin/sc-watch-arm.sh as the harness-tracked background task (never a shell & that gets reaped).'
+    else
+      fix='Re-arm it NOW: run bin/sc-watch-arm.sh as the harness-tracked background task (never a shell & that gets reaped).'
+    fi
+    rule='━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
+    {
+      printf '●%s\n' "$rule"
+      printf '●  WATCHER DOWN - SUPERVISION IS OFF\n'
+      printf '●  %s task(s) in flight, but no watcher has a fresh beacon (last beat: %s, grace %ss).\n' "$in_flight" "$beacon_desc" "$GRACE"
+      printf '●  Trust bin/sc-watch-arm.sh for the true state: it confirms a live watcher and a fresh beacon, or fails loudly.\n'
+      printf '●  %s\n' "$fix"
+      printf '●%s\n' "$rule"
+    } >&2
+    printf '%s\n' "$episode_key" > "$STALE_BANNER_MARKER" 2>/dev/null || true
+  fi
+else
+  rm -f "$STALE_BANNER_MARKER" 2>/dev/null || true
 fi
 
 # Queued wakes are an independent hazard; warn whenever they are pending, even if

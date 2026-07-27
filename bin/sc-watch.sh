@@ -1,13 +1,33 @@
 #!/usr/bin/env bash
 # Souschef watcher.
-# Blocks until supervision work is due, then exits printing one reason line:
-#   signal: <file>...     a crewmate wrote a status line or a turn-end hook fired; signals
-#                         landing within SC_SIGNAL_GRACE of each other coalesce into one wake
-#   stale: <window>       a crewmate pane stopped changing and shows no busy signature
+# Classifies supervision wakes in bash. In normal mode it ABSORBS benign wakes
+# and keeps blocking; it queues and exits only for actionable wakes. The
+# no-verb signal and stale path is absorb-only-when-provably-working: a wake is
+# absorbed only when the crew shows POSITIVE evidence it is still working (a
+# busy pane via sc-crew-state.sh), and surfaced otherwise, so a crew that
+# finishes (or stops and waits) without a current working signal is never
+# silently swallowed. A declared external-wait pause (paused:) is the separate
+# idle absorb case and re-surfaces only on its long bounded cadence. While
+# state/.afk exists the daemon owns triage, so this watcher reverts to one-shot
+# (enqueue + exit on every wake) and never double-triages. Absorbed wakes log
+# one line to the size-capped state/.watch-triage.log. Printed reason lines:
+#   signal: <file>...     status/turn-end signals, surfaced when a listed status
+#                         has a chef-relevant verb OR a no-verb signal's crew is
+#                         not provably working; coalesced within SC_SIGNAL_GRACE
+#   stale: <window>       a crewmate pane stopped changing with no busy signature
+#                         and no absorb class (not provably working, not paused);
+#                         a provably-working stale is absorbed with a wedge timer
+#                         and surfaces past SC_STALE_ESCALATE_SECS with an
+#                         "escalation N" count, plus a "demand-deep-inspection"
+#                         marker after SC_WEDGE_DEMAND_INSPECT_COUNT consecutive
+#                         escalations on the same pane; a paused stale re-surfaces
+#                         once per SC_PAUSE_RESURFACE_SECS for a recheck
 #   check: <script>: <out> an authenticated per-task check (e.g. merged-PR poll) produced output
 #   check: rejected unauthenticated state check <id>...  a state/*.check.sh was not
 #                         hash-bound to its trust file and was refused, not executed
-#   heartbeat              fleet review due; starts at SC_HEARTBEAT and backs off to SC_HEARTBEAT_MAX
+#   heartbeat              fleet-scan backstop found an unsurfaced chef-relevant
+#                         status; a no-change heartbeat is absorbed (the scan runs
+#                         at SC_HEARTBEAT cadence, backing off to SC_HEARTBEAT_MAX)
 # For normal supervision, re-arm after each wake by running bin/sc-watch-arm.sh
 # through the harness's tracked background mechanism. Direct duplicate
 # invocations of this script still no-op through the watcher singleton lock.
@@ -25,6 +45,8 @@ mkdir -p "$STATE"
 . "$SCRIPT_DIR/sc-backend.sh"
 # shellcheck source=bin/sc-check-lib.sh
 . "$SCRIPT_DIR/sc-check-lib.sh"
+# shellcheck source=bin/sc-classify-lib.sh
+. "$SCRIPT_DIR/sc-classify-lib.sh"
 
 WATCH_LOCK="$STATE/.watch.lock"
 WATCH_PATH="$SCRIPT_DIR/sc-watch.sh"
@@ -98,7 +120,11 @@ else
 fi
 
 POLL=${SC_POLL:-15}                   # seconds between cycles
-HEARTBEAT=${SC_HEARTBEAT:-1800}       # base seconds between heartbeat wakes
+HEARTBEAT=${SC_HEARTBEAT:-600}        # base seconds between heartbeat scans; the
+                                      # scan is absorbed unless it finds an
+                                      # unsurfaced chef-relevant status, so the
+                                      # cadence is tighter than the old 1800s
+                                      # unconditional-wake heartbeat at lower cost
 HEARTBEAT_MAX=${SC_HEARTBEAT_MAX:-7200}  # heartbeat backoff cap
 CHECK_INTERVAL=${SC_CHECK_INTERVAL:-300}  # seconds between *.check.sh sweeps
 CHECK_TIMEOUT=${SC_CHECK_TIMEOUT:-30}     # seconds allowed per *.check.sh
@@ -108,9 +134,91 @@ SIGNAL_GRACE=${SC_SIGNAL_GRACE:-30}   # seconds to linger after a signal so trai
 # Busy signatures per harness, OR-ed. Extend via env when new adapters are verified.
 # claude/codex: "esc to interrupt"; opencode: "esc interrupt"; pi: "Working..."
 BUSY_REGEX=${SC_BUSY_REGEX:-'esc (to )?interrupt|Working\.\.\.'}
+# Idle seconds before a provably-working stale escalates as a possible wedge.
+STALE_ESCALATE_SECS=${SC_STALE_ESCALATE_SECS:-240}
+# Bounded re-surface cadence for a declared pause (paused:)/chef-held idle pane:
+# far longer than the wedge threshold, but finite so a forgotten pause cannot
+# rot invisibly. Default owner: sc-classify-lib.sh.
+PAUSE_RESURFACE_SECS=${SC_PAUSE_RESURFACE_SECS:-$SC_PAUSE_RESURFACE_SECS_DEFAULT}
+# Consecutive wedge escalations on the SAME pane before the wake payload itself
+# carries a demand-deep-inspection marker, so the reason (not just repetition
+# the supervisor has to notice on its own) forces a closer look instead of
+# another routine supervision resume.
+WEDGE_DEMAND_INSPECT_COUNT=${SC_WEDGE_DEMAND_INSPECT_COUNT:-3}
 
 hash_pane() {
   if command -v md5 >/dev/null 2>&1; then md5 -q; else md5sum | cut -d' ' -f1; fi
+}
+
+# afk_present: 0 while the away-mode flag exists. When set, the daemon wraps
+# this watcher and owns triage, so the watcher must behave one-shot (enqueue +
+# exit on every wake) and let the daemon classify - never absorb here, or the
+# daemon's digest/injection layer would never see the wake.
+afk_present() { [ -e "$STATE/.afk" ]; }
+
+# Always-on wake triage: most wakes on a busy fleet are benign (a working: note
+# or turn-end mid-task, a no-change heartbeat). Rather than wake souschef's LLM
+# for each, this watcher classifies every wake in bash and ABSORBS the benign
+# majority - it advances the suppression marker, logs one line here, and keeps
+# blocking WITHOUT enqueuing or exiting. The log is debug-only, size-capped,
+# and safe to delete.
+TRIAGE_LOG="$STATE/.watch-triage.log"
+TRIAGE_LOG_MAX_BYTES=${SC_WATCH_TRIAGE_LOG_MAX_BYTES:-262144}
+triage_log() {
+  local sz
+  printf '[%s] %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$1" >> "$TRIAGE_LOG" 2>/dev/null || return 0
+  sz=$(wc -c < "$TRIAGE_LOG" 2>/dev/null | tr -d '[:space:]')
+  case "$sz" in ''|*[!0-9]*) return 0 ;; esac
+  if [ "$sz" -ge "$TRIAGE_LOG_MAX_BYTES" ]; then
+    tail -n 2000 "$TRIAGE_LOG" > "$TRIAGE_LOG.tmp" 2>/dev/null && mv -f "$TRIAGE_LOG.tmp" "$TRIAGE_LOG" 2>/dev/null
+    rm -f "$TRIAGE_LOG.tmp" 2>/dev/null || true
+  fi
+}
+
+# Surfaced-marker bookkeeping for the heartbeat backstop: every chef-relevant
+# status that wakes souschef through the per-wake path records its content in a
+# .hb-surfaced-<task> marker, so the heartbeat scan can tell an already-surfaced
+# status from one the per-wake path absorbed by mistake.
+_hb_surfaced_path() {
+  printf '%s/.hb-surfaced-%s' "$STATE" "$(printf '%s' "$1" | tr ':/.' '___')"
+}
+
+mark_surfaced() {  # <status-file>
+  local f=$1 task last
+  task=$(basename "$f"); task="${task%.status}"
+  last=$(sc_last_status_line "$f")
+  [ -n "$last" ] || return 0
+  sc_status_is_chef_relevant "$last" || return 0
+  printf '%s' "$last" > "$(_hb_surfaced_path "$task")"
+}
+
+# Mark every current chef-relevant status as surfaced. Called after the
+# heartbeat backstop enqueues its wake, so the same statuses are not
+# re-surfaced by the next heartbeat.
+mark_all_chef_relevant_surfaced() {
+  local f task last
+  while IFS=$(printf '\t') read -r f task last; do
+    [ -n "$f" ] || continue
+    printf '%s' "$last" > "$(_hb_surfaced_path "$task")"
+  done < <(sc_scan_chef_relevant_statuses "$STATE")
+}
+
+# Cheap heartbeat fleet-scan. 0 if any chef-relevant status has NOT already
+# been surfaced to souschef (its content differs from the .hb-surfaced-<task>
+# marker). Pure detect, no side effects: the caller enqueues first, then marks
+# surfaced. Because every chef-relevant signal/stale already marks itself
+# surfaced when it wakes souschef, this normally finds nothing and the
+# heartbeat is absorbed; it surfaces only a chef-relevant status the per-wake
+# path absorbed by mistake - the fail-safe backstop.
+heartbeat_scan_finds_actionable() {
+  local f task last surfaced
+  while IFS=$(printf '\t') read -r f task last; do
+    [ -n "$f" ] || continue
+    surfaced=$(cat "$(_hb_surfaced_path "$task")" 2>/dev/null || true)
+    [ "$surfaced" = "$last" ] && continue
+    return 0
+  done < <(sc_scan_chef_relevant_statuses "$STATE")
+  return 1
 }
 
 window_kind() {
@@ -217,6 +325,89 @@ recorded_windows() {
     seen="$seen|$w|"
     printf '%s\n' "$w"
   done
+}
+
+# Repeat-poll wedge-timer bookkeeping for an already-classified stale hash
+# absorbed as provably-working - repairs a missing/corrupt timer (self-heals a
+# watcher restart between recording the hash and recording the timer), or
+# escalates once STALE_ESCALATE_SECS have elapsed. Never re-reads the crew
+# state (the costly check already ran once, at classification time). At
+# WEDGE_DEMAND_INSPECT_COUNT consecutive escalations on the SAME pane, the
+# reason carries a demand-deep-inspection marker so the payload itself forces a
+# closer look instead of another routine supervision resume.
+wedge_timer_check() {  # <window> <since-file> <triage-label> <escalation-count-file>
+  local win=$1 since_file=$2 label=$3 escalation_file=$4 since age n reason
+  since=$(cat "$since_file" 2>/dev/null || true)
+  case "$since" in
+    ''|*[!0-9]*)
+      date +%s > "$since_file"
+      triage_log "absorbed $label timer reset: $win"
+      ;;
+    *)
+      age=$(( $(date +%s) - since ))
+      if [ "$age" -ge "$STALE_ESCALATE_SECS" ]; then
+        n=$(( $(cat "$escalation_file" 2>/dev/null || echo 0) + 1 ))
+        echo "$n" > "$escalation_file"
+        reason="stale: $win (idle ${age}s, possible wedge, escalation $n)"
+        if [ "$n" -ge "$WEDGE_DEMAND_INSPECT_COUNT" ]; then
+          reason="stale: $win (idle ${age}s, possible wedge, escalation $n, demand-deep-inspection: same pane has wedge-escalated $n times in a row - do not re-absorb on the pane state alone)"
+        fi
+        sc_wake_append stale "$win" "$reason" || exit 1
+        rm -f "$since_file"
+        wake "$reason"
+      fi
+      ;;
+  esac
+}
+
+# Absorb a stale pane under a declared external-wait pause (paused:) or a
+# chef-held transfer, and re-surface it once every PAUSE_RESURFACE_SECS for a
+# recheck so it cannot rot invisibly. Called on any stale poll once the pause
+# class applies, so it must be cheap: it NEVER re-reads crew state. The
+# re-surface age is anchored on the status file mtime, not a per-hash marker,
+# so a churny idle pane (a ticking clock) cannot keep resetting the cadence. A
+# .paused-resurfaced-<key> throttle marker records the last re-surface epoch
+# so, once past the window, it fires once per window rather than every poll.
+handle_paused_stale() {  # <window> <task> <hash>
+  local win=$1 task=$2 h=$3 key statusf mtime age rf rf_age reason
+  key=$(printf '%s' "$win" | tr ':/.' '___')
+  printf '%s' "$h" > "$STATE/.stale-$key"
+  : > "$STATE/.paused-$key"
+  rm -f "$STATE/.stale-since-$key" "$STATE/.wedge-escalations-$key"
+  statusf="$STATE/$task.status"
+  mtime=$(stat_mtime "$statusf")
+  case "$mtime" in ''|*[!0-9]*) mtime=$(date +%s) ;; esac
+  age=$(( $(date +%s) - mtime ))
+  rf="$STATE/.paused-resurfaced-$key"
+  rf_age=$(age_of "$rf")   # 999999 when no prior re-surface
+  if [ "$age" -ge "$PAUSE_RESURFACE_SECS" ] && [ "$rf_age" -ge "$PAUSE_RESURFACE_SECS" ]; then
+    reason="stale: $win (paused ${age}s, awaiting external - declared pause, rechecked on a long cadence not a wedge; confirm the wait still holds)"
+    sc_wake_append stale "$win" "$reason" || exit 1
+    date +%s > "$rf"
+    wake "$reason"
+  fi
+  triage_log "absorbed stale (paused, awaiting external, age ${age}s): $win"
+}
+
+clear_pause_tracking() {  # <window>
+  local win=$1 key
+  key=$(printf '%s' "$win" | tr ':/.' '___')
+  rm -f "$STATE/.paused-$key" "$STATE/.paused-resurfaced-$key" \
+    "$STATE/.stale-since-$key" "$STATE/.wedge-escalations-$key"
+}
+
+# Classify a first-sighting stale hash once: working (absorb + wedge timer),
+# paused (absorb on the long pause cadence), or none (surface now). One
+# sc-crew-state.sh read serves both absorb reasons; a chef-held last line whose
+# crew is otherwise stopped also classifies paused, because the reminder now
+# lives in the Open decisions ledger and the idle pane is expected.
+stale_absorb_class() {  # <task>
+  local task=$1 cls
+  cls=$(sc_crew_absorb_class "$task")
+  if [ "$cls" = none ] && sc_status_is_paused_or_chef_held "$(sc_last_status_line "$STATE/$task.status")"; then
+    cls=paused
+  fi
+  printf '%s' "$cls"
 }
 
 # Exit reporting a wake. Consecutive heartbeats with no other wake in between
@@ -335,10 +526,10 @@ while :; do
   fi
 
   # On the first changed signal, linger one grace period and re-scan before
-  # waking: a crewmate's final status write and the same turn's turn-end hook
-  # land seconds apart, and reporting them as separate wakes costs a full
-  # souschef turn each. The re-scan also picks up a newer signature for an
-  # already-pending file (last write wins below).
+  # classifying: a crewmate's final status write and the same turn's turn-end
+  # hook land seconds apart, and reporting them as separate actionable wakes
+  # costs a full souschef turn each. The re-scan also picks up a newer
+  # signature for an already-pending file (last write wins below).
   pending=$(scan_signals)
   if [ -n "$pending" ]; then
     sleep "$SIGNAL_GRACE"
@@ -351,24 +542,51 @@ while :; do
 $pending
 EOF
     reason="signal:$files"
-    while IFS=$(printf '\t') read -r sf sig f; do
-      [ -n "$sf" ] || continue
-      sc_wake_append signal "$(basename "$f")" "$reason" || exit 1
-    done <<EOF
+    # Triage: a signal is ACTIONABLE when any of these holds (cheapest first):
+    #   - the away-mode daemon owns triage (afk) and wants every wake;
+    #   - any listed status file carries a chef-relevant verb;
+    #   - or it is a no-verb wake (a bare turn-end, a working: note) whose crew
+    #     is NOT provably working - the crew stopped its turn with no busy pane,
+    #     so it may be done (even via an interactive menu that wrote no done:
+    #     status), waiting on a decision, or wedged. Absorbing such a turn-end
+    #     is exactly the swallowed-finish this triage guards against.
+    # Actionable -> enqueue, advance .seen-* markers, exit. Benign (a no-verb
+    # wake whose crew IS provably working) -> advance the markers so it will
+    # not re-fire, log, and keep blocking without enqueuing. The
+    # provably-working check is the only costly one (a sc-crew-state.sh read),
+    # so the || ordering evaluates it ONLY for a non-afk, no-chef-verb signal.
+    # shellcheck disable=SC2086  # $files is a space-separated status-path list (ids carry no spaces)
+    if afk_present || sc_signal_reason_is_actionable $files || ! sc_signal_crew_provably_working $files; then
+      while IFS=$(printf '\t') read -r sf sig f; do
+        [ -n "$sf" ] || continue
+        sc_wake_append signal "$(basename "$f")" "$reason" || exit 1
+      done <<EOF
 $pending
 EOF
-    while IFS=$(printf '\t') read -r sf sig f; do
-      [ -n "$sf" ] || continue
-      printf '%s' "$sig" > "$sf"
-    done <<EOF
+      while IFS=$(printf '\t') read -r sf sig f; do
+        [ -n "$sf" ] || continue
+        printf '%s' "$sig" > "$sf"
+        mark_surfaced "$f"
+      done <<EOF
 $pending
 EOF
-    wake "$reason"
+      wake "$reason"
+    else
+      while IFS=$(printf '\t') read -r sf sig f; do
+        [ -n "$sf" ] || continue
+        printf '%s' "$sig" > "$sf"
+      done <<EOF
+$pending
+EOF
+      triage_log "absorbed signal (crew provably working):$files"
+    fi
   fi
 
   # Layer 1 backbone: pane staleness. Two consecutive identical hashes with no busy
-  # signature means the crewmate finished, is waiting, or is wedged. Each distinct
-  # stale state is reported once (.stale-* remembers the hash already reported).
+  # signature means the crewmate finished, is waiting, or is wedged. Detection is
+  # unchanged; TRIAGE decides whether a detected stale wakes souschef. Each
+  # distinct stale state is classified once (.stale-* remembers the hash already
+  # handled; the costly crew-state read runs only on first sighting).
   while IFS= read -r w; do
     # A secondmate idling on its own watcher is healthy. Its parent supervises
     # it through status writes and heartbeats, not pane-idle staleness.
@@ -380,6 +598,8 @@ EOF
     # A cook that already reported a terminal/awaiting status (done, blocked,
     # needs-decision) is parked awaiting souschef, not wedged: it already woke
     # souschef via that status, so its idle pane must not generate stale wakes.
+    # (A paused cook derives `paused`, not one of these, so it falls through to
+    # the pause-cadence absorb below.)
     window_delivered_idle "$w" && continue
     bk=$(window_backend "$w")
     tail40=$(sc_backend_capture "$bk" "$w" 40 2>/dev/null) || continue
@@ -388,6 +608,10 @@ EOF
     hf="$STATE/.hash-$key"
     cf="$STATE/.count-$key"
     sf="$STATE/.stale-$key"
+    ssf="$STATE/.stale-since-$key"
+    ewf="$STATE/.wedge-escalations-$key"
+    pf="$STATE/.paused-$key"   # flag: this key's stale is on the bounded pause cadence
+    task=$(sc_window_to_task "$w" "$STATE")
     prev=$(cat "$hf" 2>/dev/null || true)
     if [ "$h" = "$prev" ]; then
       n=$(( $(cat "$cf" 2>/dev/null || echo 0) + 1 ))
@@ -397,29 +621,102 @@ EOF
       # runs on the last 6 non-blank lines only (the TUI footer area) so
       # busy-looking strings in displayed content cannot suppress stale detection.
       if [ "$n" -ge 2 ] && ! pane_busy "$bk" "$w" "$tail40"; then
-        if [ "$(cat "$sf" 2>/dev/null || true)" != "$h" ]; then
-          sc_wake_append stale "$w" "stale: $w" || exit 1
-          printf '%s' "$h" > "$sf"
-          wake "stale: $w"
+        if afk_present; then
+          # Daemon owns triage: one-shot per distinct stale hash, as before.
+          if [ "$(cat "$sf" 2>/dev/null || true)" != "$h" ]; then
+            sc_wake_append stale "$w" "stale: $w" || exit 1
+            printf '%s' "$h" > "$sf"
+            rm -f "$ssf" "$ewf"
+            wake "stale: $w"
+          fi
+        elif [ "$(cat "$sf" 2>/dev/null || true)" != "$h" ]; then
+          # First sighting of this stale hash: classify once.
+          case "$(stale_absorb_class "$task")" in
+            working)
+              # An active pane legitimately sitting on a static capture (e.g.
+              # the busy read raced the tail hash). Absorb, but start the wedge
+              # timer so a genuinely frozen crew still escalates.
+              rm -f "$pf" "$STATE/.paused-resurfaced-$key"
+              printf '%s' "$h" > "$sf"
+              date +%s > "$ssf"
+              triage_log "absorbed stale (provably working): $w"
+              ;;
+            paused)
+              handle_paused_stale "$w" "$task" "$h"
+              ;;
+            *)
+              # No busy pane, no declared pause: the crew has STOPPED without a
+              # chef-relevant status. Surface immediately so souschef peeks (it
+              # may be done via an interactive menu that wrote no done: status,
+              # waiting on a decision, or wedged).
+              sc_wake_append stale "$w" "stale: $w" || exit 1
+              printf '%s' "$h" > "$sf"
+              rm -f "$ssf"
+              mark_surfaced "$STATE/$task.status"
+              wake "stale: $w"
+              ;;
+          esac
+        else
+          # Already-classified hash: cheap paths only, never a crew-state
+          # re-read. A non-paused pane that stays on this same stale hash keeps
+          # a wedge timer running (self-healing a missing timer), so both an
+          # absorbed provably-working stale and a surfaced-but-unresolved stale
+          # re-escalate every STALE_ESCALATE_SECS with a growing escalation
+          # count instead of going quiet forever.
+          if [ -e "$pf" ] || sc_status_is_paused_or_chef_held "$(sc_last_status_line "$STATE/$task.status")"; then
+            handle_paused_stale "$w" "$task" "$h"
+          else
+            wedge_timer_check "$w" "$ssf" "stale (already classified)" "$ewf"
+          fi
+        fi
+      else
+        # Pane busy or not yet stably stale: reset pending escalation bookkeeping.
+        rm -f "$ssf" "$ewf"
+        if [ -e "$pf" ] && ! sc_status_is_paused_or_chef_held "$(sc_last_status_line "$STATE/$task.status")"; then
+          clear_pause_tracking "$w"
         fi
       fi
     else
       printf '%s' "$h" > "$hf"
       echo 0 > "$cf"
+      rm -f "$ssf" "$ewf"
+      if [ -e "$pf" ] && ! sc_status_is_paused_or_chef_held "$(sc_last_status_line "$STATE/$task.status")"; then
+        clear_pause_tracking "$w"
+      fi
     fi
   done < <(recorded_windows)
 
-  # Heartbeat: souschef reviews the whole fleet at a regular cadence no matter
-  # what. Time-based via .last-heartbeat mtime; interval doubles per consecutive
-  # heartbeat (idle fleet) up to HEARTBEAT_MAX, and resets on any other wake.
+  # Heartbeat: the watcher runs a cheap fleet-scan at a regular cadence no
+  # matter what. Time-based via .last-heartbeat mtime; interval doubles per
+  # consecutive no-change heartbeat (idle fleet) up to HEARTBEAT_MAX, and
+  # resets on any surfaced non-heartbeat wake.
   streak=$(cat "$STATE/.heartbeat-streak" 2>/dev/null || echo 0)
   [ "$streak" -gt 12 ] && streak=12
   hb=$(( HEARTBEAT * (1 << streak) ))
   [ "$hb" -gt "$HEARTBEAT_MAX" ] && hb=$HEARTBEAT_MAX
   if [ "$(age_of "$STATE/.last-heartbeat")" -ge "$hb" ]; then
-    sc_wake_append heartbeat heartbeat heartbeat || exit 1
-    touch "$STATE/.last-heartbeat"
-    wake "heartbeat"
+    # Triage: a heartbeat is benign unless the cheap fleet-scan turns up a
+    # chef-relevant status the per-wake path missed. Absorb the no-change case
+    # (advance the schedule and back off exactly as wake() would, without
+    # exiting); the away-mode daemon, when present, owns triage and wants every
+    # heartbeat.
+    if afk_present; then
+      sc_wake_append heartbeat heartbeat heartbeat || exit 1
+      touch "$STATE/.last-heartbeat"
+      wake "heartbeat"
+    elif heartbeat_scan_finds_actionable; then
+      # Backstop: a chef-relevant status the per-wake path absorbed by mistake.
+      # Enqueue first, then mark every chef-relevant status surfaced so the
+      # next heartbeat does not re-fire them (enqueue-before-suppress preserved).
+      sc_wake_append heartbeat heartbeat heartbeat || exit 1
+      touch "$STATE/.last-heartbeat"
+      mark_all_chef_relevant_surfaced
+      wake "heartbeat"
+    else
+      touch "$STATE/.last-heartbeat"
+      echo $(( $(cat "$STATE/.heartbeat-streak" 2>/dev/null || echo 0) + 1 )) > "$STATE/.heartbeat-streak"
+      triage_log "absorbed heartbeat (no chef-relevant change)"
+    fi
   fi
 
   sleep "$POLL"

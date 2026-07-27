@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
-# Atomically drain durable watcher wake records, then assert watcher liveness.
+# Atomically drain durable watcher wake records, annotate signal records with a
+# bounded status-event tail after the raw records commit, then assert watcher
+# liveness. The annotation saves the follow-up read most wake turns start with
+# (each signal record's status file), and is clearly labeled as wake-EVENT
+# history, never current state (bin/sc-crew-state.sh owns that). Set
+# SC_DRAIN_ANNOTATE_LINES=0 to disable; default 3 lines per status file.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -55,6 +60,25 @@ mv "$SC_WAKE_QUEUE" "$DRAIN_TMP" || exit 1
 : > "$SC_WAKE_QUEUE" || exit 1
 
 sc_wake_print_deduped "$DRAIN_TMP" || exit "$?"
+
+# Bounded historical annotation for signal records, AFTER the raw records above
+# (which stay byte-identical for any consumer that parses them). Only *.status
+# keys that still exist annotate; each tail is labeled as event history.
+ANNOTATE_LINES=${SC_DRAIN_ANNOTATE_LINES:-3}
+case "$ANNOTATE_LINES" in ''|*[!0-9]*) ANNOTATE_LINES=3 ;; esac
+if [ "$ANNOTATE_LINES" -gt 0 ]; then
+  seen_keys=" "
+  while IFS=$(printf '\t') read -r _epoch _seq kind key _payload; do
+    [ "$kind" = signal ] || continue
+    case "$key" in *.status) ;; *) continue ;; esac
+    case "$seen_keys" in *" $key "*) continue ;; esac
+    seen_keys="$seen_keys$key "
+    [ -f "$STATE/$key" ] || continue
+    printf '[event-history] %s (last %s lines; wake events, not current state):\n' "$STATE/$key" "$ANNOTATE_LINES"
+    tail -n "$ANNOTATE_LINES" "$STATE/$key" | sed 's/^/  /'
+  done < <(sc_wake_print_deduped "$DRAIN_TMP")
+fi
+
 rm -f "$DRAIN_TMP"
 DRAIN_TMP=
 assert_watcher_liveness
