@@ -11,6 +11,11 @@
 # and a false "already running" off the dying process. That exact mistake
 # silently took supervision down for ~30 minutes.
 #
+# The watcher is forked into its OWN session (setsid), not this arm's process
+# group, so that when souschef runs as a harness background job a process-group
+# reap of the finished arm task cannot take the watcher down with it; supervision
+# outlives an arm teardown. See the launch site below for the full rationale.
+#
 # This script forks the watcher as a tracked child, then VERIFIES the outcome
 # before it settles in. It confirms a watcher process is genuinely alive AND the
 # liveness beacon (state/.last-watcher-beat) is fresh within SC_GUARD_GRACE (the
@@ -137,28 +142,49 @@ if [ "$mode" = arm ] && healthy_watcher; then
   exit 0
 fi
 
-# Start a watcher as a tracked child and confirm it before settling in. The child
-# stays our child for its whole life: we wait on it, so killing this arm (the
-# harness-tracked task) tears the watcher down too, and the watcher's eventual
-# wake exit propagates out so the harness re-notifies souschef.
+# Start a watcher and confirm it before settling in. The watcher stays our child
+# so we can wait on it and deliver its wake as this task's completion, but it is
+# launched into its OWN session (setsid) so it is NOT in this arm's process
+# group. That matters when souschef runs as a harness background job: some
+# harnesses reap a finished tracked task by signalling its whole process group,
+# which would otherwise take the watcher down with the arm. In its own session
+# the watcher survives that reap; and if this arm is itself terminated, the
+# signal traps below deliberately leave the running watcher alive (the next
+# re-arm observes it as healthy) instead of killing it. Supervision must outlive
+# an arm teardown. Where new-session detach is unavailable (no perl) we fall back
+# to a plain background child - correctness never depends on the detach, only the
+# extra reap-resilience does.
 child=
 child_out=
 cleanup_child() {
   if [ -n "$child" ] && sc_pid_alive "$child"; then
     kill -TERM "$child" 2>/dev/null || true
   fi
+  cleanup_tempfile
+}
+cleanup_tempfile() {
   if [ -n "$child_out" ]; then
     rm -f "$child_out" 2>/dev/null || true
   fi
 }
-trap 'cleanup_child; exit 129' HUP
-trap 'cleanup_child; exit 143' TERM INT
+# On external termination of THIS arm (e.g. a harness reaping the tracked task),
+# leave the detached watcher running so supervision survives; only drop our own
+# tempfile. Never kill the watcher here - that is what took supervision down.
+trap 'cleanup_tempfile; exit 129' HUP
+trap 'cleanup_tempfile; exit 143' TERM INT
 
 child_out=$(mktemp "$STATE/.watch-arm-output.XXXXXX") || {
   echo "watcher: FAILED - no live watcher with a fresh beacon"
   exit 1
 }
-"$WATCH" >"$child_out" &
+if command -v perl >/dev/null 2>&1; then
+  # setsid() puts the watcher in a new session (new process group, detached from
+  # any controlling terminal) before exec; exec preserves the pid, so $! and the
+  # pid the watcher records in the lock still match for the confirm check below.
+  perl -MPOSIX -e 'POSIX::setsid(); exec { $ARGV[0] } @ARGV or die "exec: $!"' "$WATCH" >"$child_out" &
+else
+  "$WATCH" >"$child_out" &
+fi
 child=$!
 child_done=0
 

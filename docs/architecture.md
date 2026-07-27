@@ -14,6 +14,8 @@ After each drain, `sc-wake-drain.sh` runs the same liveness guard as the expedit
 Routine pass polling, re-arm no-ops, elapsed waiting time, and unchanged heartbeat reviews stay silent; an idle brigade costs you nothing.
 
 Routine re-arms go through `bin/sc-watch-arm.sh`, which forks the pass as a tracked child, verifies it is genuinely alive with a fresh liveness beacon, and prints exactly one honest status line (`started` / `healthy` / `FAILED`, the last exiting non-zero) - never a false `already running` off a dying process.
+The pass is forked into its own session (not the arm's process group), so when the sous-chef runs as a harness background job a process-group reap of the finished arm task cannot take the pass down with it; supervision outlives an arm teardown, and the next re-arm sees the still-live pass as healthy.
+A pass whose beacon has gone stale beyond grace - a dead holder, a reaped watcher's pid reused by an unrelated live process, or a wedged pass - is reclaimed automatically on the next launch (the self-eviction guard keeps that safe), instead of dead-locking a re-arm on a manual lock clear.
 Its `--restart` mode signals only the pass recorded in the current home's `state/.watch.lock`, so restarting one home cannot kill sibling station chef passes.
 A pull-based guard (`bin/sc-guard.sh`) warns through expediting tool output if the primary checkout is tangled, or if tickets are in flight and that pass stops running or queued wakes are waiting to be drained.
 The drain script calls that guard after emptying the queue, which avoids repeating the queued-wakes warning for records it just consumed while still warning on stale pass liveness.
