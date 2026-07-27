@@ -1,6 +1,6 @@
 ---
 name: bearings
-description: Generate a "pick up where I left off" status report from souschef's live brigade state. Use when the Chef invokes /bearings or asks for a status report, morning brief, catch-up, "where did I leave off", or "what's in the works". Reads bounded local fleet state cheaply with one deterministic command, writes a dated report to data/status-report-<YYYY-MM-DD>.md, and surfaces a concise four-section digest in chat; it is read-mostly and must not tear down, merge, or dispatch work as a side effect of producing the brief.
+description: Generate a "pick up where I left off" status report from Chef's live brigade state. Use when the Chef invokes /bearings or asks for a status report, morning brief, catch-up, "where did I leave off", or "what's in the works". Reads bounded local fleet state cheaply with one deterministic command, writes a dated report to data/status-report-<YYYY-MM-DD>.md, and surfaces a concise four-section digest in chat; it is read-mostly and must not tear down, merge, or dispatch work as a side effect of producing the brief.
 user-invocable: true
 ---
 

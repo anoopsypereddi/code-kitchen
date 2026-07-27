@@ -1,6 +1,6 @@
 # Configuration
 
-The files and environment variables you set to operate Souschef.
+The files and environment variables you set to operate Chef.
 
 ## Orchestrator behavior (AGENTS.md)
 
@@ -20,19 +20,19 @@ Personal preferences for one Chef's brigade live locally in `data/captain.md`; i
 
 Persistent station chef routes live locally in `data/secondmates.md`.
 Each line records the station chef id, charter summary, absolute home path, natural-language scope, project clone list, and added date; `sc-home-seed.sh validate` refuses duplicate ids, duplicate homes, and nested or overlapping homes.
-The main Souschef routes by reading those scopes with judgment; the project list is provisioning data, not exclusive ownership.
-Use `sc-home-seed.sh <id> - <project>...` to lease a fresh Souschef worktree for the station chef home.
+The main Chef routes by reading those scopes with judgment; the project list is provisioning data, not exclusive ownership.
+Use `sc-home-seed.sh <id> - <project>...` to lease a fresh Chef worktree for the station chef home.
 The lease is held under the station chef id until explicit retirement or seed rollback returns it, so normal restarts do not free or recycle the home.
 86 of a leased home fails closed if `sc-worktree.sh return` cannot release the lease; plain-clone homes that are not a managed worktree are removed directly.
-Station chef routes cover `direct-PR` projects; `local-only` projects remain main-Souschef work.
+Station chef routes cover `direct-PR` projects; `local-only` projects remain main-Chef work.
 After creating a station chef, move existing main-backlog items that you have judged in-scope with `sc-backlog-handoff.sh <secondmate-id> <item-key>...`; it is idempotent and refuses in-flight items or non-station-chef homes.
 Set `SC_SECONDMATE_CHARTER` to seed from inline charter text when no filled charter brief exists; set `SC_SECONDMATE_SCOPE` when the routing scope should differ from the charter text.
 
 ## SC_HOME
 
-`SC_HOME` selects the operational home for one Souschef instance.
+`SC_HOME` selects the operational home for one Chef instance.
 When it is unset, the repo root is the home; when it is set, scripts still run from this repo's `bin/`, but `state/`, `data/`, `config/`, and `projects/` come from `$SC_HOME`.
-`SC_ROOT_OVERRIDE` overrides the Souschef repo root used by scripts, including the primary checkout watched by the worktree-tangle guard.
+`SC_ROOT_OVERRIDE` overrides the Chef repo root used by scripts, including the primary checkout watched by the worktree-tangle guard.
 When `SC_HOME` is unset, it also behaves as the old whole-root override.
 `SC_STATE_OVERRIDE`, `SC_DATA_OVERRIDE`, `SC_PROJECTS_OVERRIDE`, and `SC_CONFIG_OVERRIDE` override individual operational directories for tests and specialized harness setup.
 
@@ -42,7 +42,7 @@ claude, codex, opencode, and pi are all empirically verified; new harnesses get 
 The verified adapter knowledge - busy signatures, interrupt and exit commands, skill-invocation syntax, and per-harness quirks - lives in [`.agents/skills/harness-adapters/SKILL.md`](../.agents/skills/harness-adapters/SKILL.md).
 Launch mechanics, including the verified command templates, live in [`bin/sc-spawn.sh`](../bin/sc-spawn.sh).
 
-`config/crew-harness` is a local, gitignored file containing one adapter name for crewmate and scout launches; absent or `default` mirrors souschef's own harness.
+`config/crew-harness` is a local, gitignored file containing one adapter name for crewmate and scout launches; absent or `default` mirrors Chef's own harness.
 `config/secondmate-harness` is a separate local, gitignored file containing the adapter the primary uses to launch station-chef (secondmate) agents, optionally followed by model and effort tokens on the same line.
 The first non-empty, non-comment line is parsed as `<harness> [<model>] [<effort>]`, whitespace-separated.
 A bare `<harness>` preserves the previous behavior: harness only, no model or effort launch flag.
@@ -53,8 +53,8 @@ See [`docs/examples/secondmate-harness`](examples/secondmate-harness) for a star
 
 ## Crew dispatch profiles (config/crew-dispatch.json)
 
-`config/crew-dispatch.json` is an optional local, gitignored file containing natural-language rules that souschef reads before dispatching a crewmate or scout.
-The shell scripts do not match those rules; souschef chooses the best matching rule with judgment, resolves that rule directly or through a supported selector (`bin/sc-dispatch-select.sh`), and passes only concrete `--harness`, `--model`, and `--effort` flags to `sc-spawn.sh`.
+`config/crew-dispatch.json` is an optional local, gitignored file containing natural-language rules that Chef reads before dispatching a crewmate or scout.
+The shell scripts do not match those rules; Chef chooses the best matching rule with judgment, resolves that rule directly or through a supported selector (`bin/sc-dispatch-select.sh`), and passes only concrete `--harness`, `--model`, and `--effort` flags to `sc-spawn.sh`.
 When the file exists, `sc-spawn.sh` enforces that contract by refusing crewmate and scout spawns that lack an explicit harness (`--harness`, a positional adapter, or a raw launch command), so the rules are never silently skipped.
 Batch spawns satisfy the same requirement with a shared `--harness`.
 Station-chef (secondmate) spawns are exempt and still resolve through `config/secondmate-harness` and its optional model and effort tokens.
@@ -68,7 +68,7 @@ Station-chef (secondmate) spawns are exempt and still resolve through `config/se
         { "harness": "<adapter>", "model": "<optional model>", "effort": "<low|medium|high|xhigh|max, optional>" }
       ],
       "select": "<optional strategy>",
-      "why": "<optional rationale that helps souschef choose>"
+      "why": "<optional rationale that helps Chef choose>"
     }
   ],
   "default": { "harness": "<adapter>", "model": "<optional model>", "effort": "<optional effort>" }
@@ -91,14 +91,14 @@ Station-chef homes inherit this file from the primary, so a station chef's own c
 
 ## Session-provider backend (tmux, herdr)
 
-Souschef spawns each cook into a session provider. The default is **tmux** (each cook is a tmux window); the experimental **herdr** backend spawns each cook as a native [herdr](https://herdr.dev) pane, so cooks are visible in your herdr session (tmux windows are invisible to herdr).
-Selection order per spawn: `SC_BACKEND` env, then a single word (`herdr`/`tmux`) in `config/backend`, then auto-detection when Souschef runs inside herdr (`HERDR_ENV=1`, no `$TMUX`), then tmux.
+Chef spawns each cook into a session provider. The default is **tmux** (each cook is a tmux window); the experimental **herdr** backend spawns each cook as a native [herdr](https://herdr.dev) pane, so cooks are visible in your herdr session (tmux windows are invisible to herdr).
+Selection order per spawn: `SC_BACKEND` env, then a single word (`herdr`/`tmux`) in `config/backend`, then auto-detection when Chef runs inside herdr (`HERDR_ENV=1`, no `$TMUX`), then tmux.
 An explicit `SC_BACKEND`/`config/backend` is a hard choice and fails loudly if herdr is unusable; an auto-detected herdr that is not ready (missing `herdr`/`jq`, or an old protocol) falls back to tmux with a warning.
 The herdr backend needs the `herdr` CLI (protocol >= 14) and `jq`, both gated behind selecting it. See [session-backends.md](session-backends.md) for the full contract, the meta compatibility rule, station-chef behavior, and limitations.
 
 ## Toolchain
 
-On first launch the sous-chef detects what its required toolchain is missing or too old (tmux, node, gh, git, curl), lists it with the exact install commands, and installs only after you say go. (Worktrees are managed by the built-in `bin/sc-worktree.sh` on plain `git worktree`, so there is no third-party worktree tool to detect.)
+On first launch the Chef detects what its required toolchain is missing or too old (tmux, node, gh, git, curl), lists it with the exact install commands, and installs only after you say go. (Worktrees are managed by the built-in `bin/sc-worktree.sh` on plain `git worktree`, so there is no third-party worktree tool to detect.)
 Bootstrap also reports a `TANGLE:` line when `SC_ROOT` is on a named non-default branch; follow the printed checkout remediation rather than treating it as an installable tool problem.
 Bootstrap also runs the guarded local station chef sync for recorded live station chef homes.
 It emits `SECONDMATE_SYNC:` only when a home was skipped for an actionable reason, and `NUDGE_SECONDMATES:` only when a running home advanced and its instruction surface changed.
@@ -109,7 +109,7 @@ Runtime tuning via environment variables (defaults shown):
 
 ```sh
 SC_HOME=                 # optional operational home; unset means this repo root
-SC_ROOT_OVERRIDE=        # override Souschef repo root and tangle-guard target; also legacy whole-root override when SC_HOME is unset
+SC_ROOT_OVERRIDE=        # override Chef repo root and tangle-guard target; also legacy whole-root override when SC_HOME is unset
 SC_STATE_OVERRIDE=       # alternate state dir, mainly for tests
 SC_DATA_OVERRIDE=        # alternate data dir, mainly for tests
 SC_PROJECTS_OVERRIDE=    # alternate projects dir, mainly for tests

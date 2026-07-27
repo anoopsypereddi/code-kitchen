@@ -5,7 +5,7 @@
 # This is the one implementation of "advance a souschef checkout to a base by a
 # clean fast-forward, never forcing, merging, or stashing" used by every sync
 # path:
-#   - /updatesouschef (bin/sc-update.sh) pulls from origin: base_mode "origin".
+#   - /update-chef (bin/sc-update.sh) pulls from origin: base_mode "origin".
 #   - the local-HEAD secondmate sync (bin/sc-spawn.sh on launch, bin/sc-bootstrap.sh
 #     on startup) follows the PRIMARY checkout's current default-branch commit:
 #     base_mode is that local commit, with NO fetch and no origin dependency.
@@ -230,7 +230,7 @@ dirty_status() {
 #   FF_INSTR  = comma list of changed instruction paths (only when updated)
 #
 # base_mode selects where the fast-forward base comes from:
-#   origin       - fetch origin and advance to origin/<default> (the /updatesouschef
+#   origin       - fetch origin and advance to origin/<default> (the /update-chef
 #                  path); requires an origin remote and network reachability.
 #   <commit-ish> - advance to that LOCAL commit with NO fetch and no origin
 #                  dependency (the local-HEAD secondmate sync). The commit must

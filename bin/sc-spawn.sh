@@ -224,7 +224,7 @@ case "$ARG3" in
     # secondmate harness (config/secondmate-harness -> config/crew-harness -> own);
     # every other kind uses the crew harness only when no dispatch profile file is
     # active. Resolving here on every spawn is what makes both splits DURABLE - a
-    # respawn (recovery, /updatesouschef, restart) re-resolves.
+    # respawn (recovery, /update-chef, restart) re-resolves.
     if [ "$KIND" = secondmate ]; then
       HARNESS=$("$SC_ROOT/bin/sc-harness.sh" secondmate)
       harness_src='config/secondmate-harness (falling back to config/crew-harness)'

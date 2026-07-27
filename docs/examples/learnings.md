@@ -1,6 +1,6 @@
 # Fleet learnings
 
-Curated, home-local operational knowledge for this Souschef home - the gotchas
+Curated, home-local operational knowledge for this Chef home - the gotchas
 worth not re-discovering the hard way. This is a TRACKED EXAMPLE; the live file
 lives at `data/learnings.md`, which is LOCAL and gitignored (Chef-private
 brigade state) and never committed. Copy this file to `data/learnings.md` when
