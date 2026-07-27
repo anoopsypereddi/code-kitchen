@@ -1,15 +1,15 @@
 # Primary-side supervision hooks
 
-Souschef's single most-documented failure mode (AGENTS.md section 8) is the
+Chef's single most-documented failure mode (AGENTS.md section 8) is the
 **blind turn**: a primary session ends a turn with work in flight and no live
 watcher (pass), and then never runs another fleet-touching command, so it sits
-blind for hours. `bin/sc-guard.sh` is pull-based - it only warns when Souschef
+blind for hours. `bin/sc-guard.sh` is pull-based - it only warns when Chef
 happens to run a wrapped expediting script - so it cannot catch a turn that ends
 and runs nothing.
 
 This set of primary-side, harness-native hooks converts that discipline rule
 into a structural invariant. They fire on the harness's own turn-end and
-pre-tool events, without Souschef remembering to run anything. They are
+pre-tool events, without Chef remembering to run anything. They are
 belt-and-suspenders WITH the pull-based guard, never a replacement.
 
 ## The four guards
@@ -55,21 +55,21 @@ fresh beacon alone is not proof, because a dead pid can leave a recent beacon.
 
 4. **cd-guard** - `bin/sc-cd-command-policy.mjs` via `bin/sc-cd-pretool-check.sh`.
    Blocks a persistent top-level `cd`/`pushd`/`popd` that would relocate the
-   primary shell into a project clone, so a later Souschef-owned command cannot
+   primary shell into a project clone, so a later Chef-owned command cannot
    silently run inside a clone. A subshell-scoped `(cd x && ...)`, a
    pipeline/background stage, `git -C <dir>`, and `command -v cd` are allowed.
 
 ## Scoping
 
-Souschef is a self-hosted git repo: the primary checkout, every crewmate/scout
+Chef is a self-hosted git repo: the primary checkout, every crewmate/scout
 task worktree, and every station chef (secondmate) home are linked worktrees of
 one repo. The turn-end guard, continuity gate, and cd-guard scope themselves to
 a real PRIMARY checkout and are completely inert inside a cook's linked worktree,
-so they never interfere with a cook working on Souschef itself.
+so they never interfere with a cook working on Chef itself.
 
 - A plain (non-worktree) checkout - git-dir equals git-common-dir - is primary.
 - A station chef home carrying a valid `.sc-secondmate-home` marker runs its OWN
-  primary Souschef session and is force-included as guarded, even when it is a
+  primary Chef session and is force-included as guarded, even when it is a
   linked worktree. An empty or non-ASCII marker cannot spoof inclusion.
 - A crewmate/scout task worktree (a genuine linked `git worktree`,
   git-dir != git-common-dir, with no marker) is exempt.

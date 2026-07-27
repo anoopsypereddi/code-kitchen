@@ -17,8 +17,8 @@ But the moment you want three things done in parallel across your projects - fix
 
 code-kitchen runs your work like a kitchen brigade.
 You are the **Chef**: you call out what you want and make the final calls.
-You talk to a single agent, the **Souschef**, who runs the line for you and never cooks the dishes itself.
-The Souschef **fires** each piece of work to a **Cook** - an autonomous agent working at its own **station**, a clean git worktree - **expedites** the whole line, and brings finished plates back to the pass: PRs ready for review, approved local merges, or standalone investigation reports.
+You talk to a single agent - also named **Chef** - who runs the line for you and never cooks the dishes itself; agent and owner share the title by design.
+That agent **fires** each piece of work to a **Cook** - an autonomous agent working at its own **station**, a clean git worktree - **expedites** the whole line, and brings finished plates back to the pass: PRs ready for review, approved local merges, or standalone investigation reports.
 
 For a busy line, you can stand up persistent **station chefs**: domain specialists that own a recurring area of the kitchen and run from their own isolated homes.
 
@@ -28,15 +28,15 @@ There is no app to install. The brigade is `AGENTS.md`, a set of bundled skills,
 
 | In the kitchen      | What it means                                                                 |
 | ------------------- | ----------------------------------------------------------------------------- |
-| **Chef**            | you - you direct the work and make every merge call                           |
-| **Souschef**            | the orchestrator you talk to; it runs the line and never edits projects itself |
+| **Chef** (you)      | you - you direct the work and make every merge call                           |
+| **Chef** (the agent) | the orchestrator you talk to; it runs the line and never edits projects itself |
 | **Cook**            | an autonomous worker agent that does one piece of work at its own station      |
 | **station chef**    | a persistent Cook that owns a recurring domain from its own isolated home      |
 | **station**         | a clean, disposable git worktree where one Cook works in isolation             |
 | **ticket**          | a single unit of work                                                          |
 | **the rail**        | the queue of tickets waiting to be fired                                       |
 | **fire**            | hand a ticket to a Cook and start the work                                     |
-| **the pass**        | where the Souschef expedites the line and finished work is checked                 |
+| **the pass**        | where the Chef expedites the line and finished work is checked                 |
 | **service!**        | the Chef's call to merge a finished plate                                      |
 | **86**              | tear down a station once its work has landed                                   |
 
@@ -44,12 +44,12 @@ There is no app to install. The brigade is `AGENTS.md`, a set of bundled skills,
 
 A ticket flows through the line like an order:
 
-1. **A ticket comes in.** You ask the Souschef for a change, an investigation, a plan, or an audit. The Souschef figures out which project it belongs to and what shape it is.
-2. **The Souschef fires a Cook.** It opens a fresh station - a clean git worktree in its own tmux window - and hands the Cook a brief. Independent tickets run in parallel; nothing collides because every Cook has its own station.
-3. **The Cook works.** It does the job autonomously while the Souschef expedites the line, waking only when a Cook needs a decision, finishes, or gets stuck. You can watch any station or type into it directly.
+1. **A ticket comes in.** You ask the Chef for a change, an investigation, a plan, or an audit. The Chef figures out which project it belongs to and what shape it is.
+2. **The Chef fires a Cook.** It opens a fresh station - a clean git worktree in its own tmux window - and hands the Cook a brief. Independent tickets run in parallel; nothing collides because every Cook has its own station.
+3. **The Cook works.** It does the job autonomously while the Chef expedites the line, waking only when a Cook needs a decision, finishes, or gets stuck. You can watch any station or type into it directly.
 4. **The plate is checked at the pass.** A change gets validated, then comes back as a PR (with CI green) or an approved local merge; an investigation comes back as a written report.
-5. **You call service!** Merging is always the Chef's call. The Souschef never merges without your word.
-6. **86 the station.** Once the work has landed, the Souschef tears the station down and clears the rail for the next ticket.
+5. **You call service!** Merging is always your call. The agent never merges without your word.
+6. **86 the station.** Once the work has landed, the Chef tears the station down and clears the rail for the next ticket.
 
 A restart is a non-event: all state lives on disk and in tmux, so the line picks back up exactly where it was.
 
@@ -60,7 +60,7 @@ code-kitchen doesn't reinvent the tools - it conducts them:
 - **tmux** - every Cook works in its own visible window you can watch or jump into.
 - **git** - each station is an isolated git worktree (carved and torn down by code-kitchen's own `bin/sc-worktree.sh`), so parallel work on one repo never steps on itself.
 - **gh** - GitHub operations (PRs, issues, CI) run through the official `gh` CLI.
-- **your agent harness** - claude, codex, opencode, or pi; the Souschef spawns Cooks on the same harness you run.
+- **your agent harness** - claude, codex, opencode, or pi; the Chef spawns Cooks on the same harness you run.
 
 Everything it conducts is a tool you already own: tmux, git, `gh`, and your harness. There are no third-party toolchain dependencies to install or trust.
 
@@ -74,7 +74,7 @@ Everything it conducts is a tool you already own: tmux, git, `gh`, and your harn
 Each project picks how a finished change reaches `main`:
 
 - **direct-PR** - the Cook validates locally (lint, format, type-check, tests all green), then pushes and opens a PR for you to merge. The default.
-- **local-only** - a local branch with no remote; the Souschef shows you the diff and merges locally once you approve.
+- **local-only** - a local branch with no remote; the Chef shows you the diff and merges locally once you approve.
 
 ## Getting started
 
@@ -82,7 +82,7 @@ Each project picks how a finished change reaches `main`:
 
 code-kitchen runs *inside* an AI agent harness - there is no code-kitchen app to install. You point an agent at this repo and talk to it. So before anything else:
 
-- **An agent harness, installed and authenticated** - one of claude, codex, opencode, or pi. This is non-negotiable: the Souschef *is* an agent running in that harness, and every Cook it fires defaults to the **same** harness. So the harness you launch the Souschef in is the one that does all the actual work - make sure it is logged in (API key set / authenticated) before you start.
+- **An agent harness, installed and authenticated** - one of claude, codex, opencode, or pi. This is non-negotiable: the Chef *is* an agent running in that harness, and every Cook it fires defaults to the **same** harness. So the harness you launch the Chef in is the one that does all the actual work - make sure it is logged in (API key set / authenticated) before you start.
 - **`gh`, the GitHub CLI, authenticated** (`gh auth login`) - every PR, issue, and CI check flows through it. `setup.sh` treats this as a hard requirement and will not finish without it.
 - **`tmux`** - every Cook runs in its own tmux window you can watch or jump into.
 - **`git`** - each Cook works in its own isolated git worktree.
@@ -91,7 +91,7 @@ code-kitchen runs *inside* an AI agent harness - there is no code-kitchen app to
 
 ### The model in one minute
 
-You are the **Chef**. You talk to one always-on manager, the **Souschef**, in plain language. The Souschef never edits your projects itself - it delegates each piece of real work to a **Cook**, an autonomous agent running in its own isolated git worktree, and brings finished work back to you as a PR to review, a local merge to approve, or a written report. That is the whole idea; everything below is detail.
+You are the **Chef**. You talk to one always-on manager - an agent also named **Chef** - in plain language. It never edits your projects itself - it delegates each piece of real work to a **Cook**, an autonomous agent running in its own isolated git worktree, and brings finished work back to you as a PR to review, a local merge to approve, or a written report. That is the whole idea; everything below is detail.
 
 ### Setup (the happy path)
 
@@ -121,7 +121,7 @@ Then just talk:
 ```
 > look at my github project xyz, then fix the flaky login test and add dark mode
 
-  (the Souschef clones the project, fires two Cooks, and expedites the line)
+  (the Chef clones the project, fires two Cooks, and expedites the line)
 
   Ready for review: https://github.com/you/xyz/pull/42
   (fix flaky login test - risk: low - CI green)
@@ -132,7 +132,7 @@ Then just talk:
 Launching your harness from inside tmux puts every station window in your own session, where you can watch the brigade work in real time or jump into any station to intervene.
 Outside tmux, stations land in a detached `souschef` session you can attach to.
 
-If you run Souschef inside [herdr](https://herdr.dev), cooks can instead be spawned as native herdr panes so they show up in your herdr session (tmux windows are invisible to herdr).
+If you run Chef inside [herdr](https://herdr.dev), cooks can instead be spawned as native herdr panes so they show up in your herdr session (tmux windows are invisible to herdr).
 tmux stays the default and the fallback; see [docs/session-backends.md](docs/session-backends.md) for how to select the herdr backend and what it needs.
 
 ## Documentation
@@ -142,7 +142,7 @@ tmux stays the default and the fallback; see [docs/session-backends.md](docs/ses
 - [docs/scripts.md](docs/scripts.md) - the `bin/` toolbelt reference.
 - [docs/session-backends.md](docs/session-backends.md) - the tmux/herdr session-provider backends: selecting one, requirements, and limitations.
 - [docs/containerization.md](docs/containerization.md) - the optional containerized kitchen: host boundary, mounts, credentials, and usage.
-- [`AGENTS.md`](AGENTS.md) - the Souschef's full operating manual.
+- [`AGENTS.md`](AGENTS.md) - the Chef's full operating manual.
 - [CONTRIBUTING.md](CONTRIBUTING.md) - how to contribute, including the dev/test commands.
 
 ## Contributing

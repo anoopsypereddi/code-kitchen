@@ -1,12 +1,12 @@
 # Session-provider backends (tmux, herdr)
 
-Souschef spawns each cook into a **session provider** - a terminal container it
+Chef spawns each cook into a **session provider** - a terminal container it
 can create, drive, read, and tear down. Two backends exist today:
 
 - **tmux** (default) - each cook is a tmux window. This is the long-proven path
   and the fallback everywhere.
 - **herdr** (experimental) - each cook is a native [herdr](https://herdr.dev)
-  pane. Use this when you run Souschef itself inside herdr, so the cooks show up
+  pane. Use this when you run Chef itself inside herdr, so the cooks show up
   as real panes you can watch in your herdr session.
 
 ## Why the herdr backend exists
@@ -14,7 +14,7 @@ can create, drive, read, and tear down. Two backends exist today:
 herdr is a terminal multiplexer with its **own** server and panes. A cook
 spawned as a **tmux window** is structurally invisible to `herdr pane list` -
 herdr can only see and manage its own panes, and no dotfiles/config/env change
-can bridge that gap. So when you run Souschef inside herdr with the default tmux
+can bridge that gap. So when you run Chef inside herdr with the default tmux
 backend, the whole brigade is unwatchable from herdr: `herdr pane list` shows
 only your own shell.
 
@@ -31,10 +31,10 @@ Resolution order (first match wins), per spawn:
 1. **`SC_BACKEND` env var** - `SC_BACKEND=herdr` or `SC_BACKEND=tmux`. A hard
    choice; if herdr is unusable the spawn fails loudly.
 2. **`config/backend`** - a single word (`herdr` or `tmux`) on the first
-   non-empty line of `config/backend` in the Souschef home. Local and
+   non-empty line of `config/backend` in the Chef home. Local and
    gitignored, exactly like `config/crew-harness`. This is the durable way to
    pin a home to a backend.
-3. **Auto-detection** - when nothing above is set and Souschef is running inside
+3. **Auto-detection** - when nothing above is set and Chef is running inside
    herdr (`HERDR_ENV=1`, no `$TMUX`), herdr is auto-selected. Nested case: a
    tmux started inside a herdr pane sets `$TMUX`, so tmux wins (innermost-first).
 4. **Default: tmux.**
@@ -85,7 +85,7 @@ sessions only.
   scripts ran inline before, so the default path is byte-identical).
 - `bin/backends/herdr.sh` - the herdr adapter (adapted from the
   [firstmate](https://github.com/kunchenguid/firstmate) reference, verified
-  there against real herdr through v0.7.4 / protocol 16). When Souschef runs **inside** a
+  there against real herdr through v0.7.4 / protocol 16). When Chef runs **inside** a
   herdr pane (detected via `HERDR_SOCKET_PATH` / `HERDR_ENV`) a server is already
   running, so the adapter never launches a second `herdr server`: a transiently
   missed `status` probe only retries and, failing that, errors out - launching a
@@ -97,7 +97,7 @@ tmux directly.
 
 ### Container shape (herdr)
 
-One herdr **workspace per Souschef home** (the primary is labeled `souschef`;
+One herdr **workspace per Chef home** (the primary is labeled `souschef`;
 each station chef is `sc-2ndmate-<id>`), one herdr **tab (pane) per cook** inside
 that workspace. The workspace-per-home layout keeps every home's cooks grouped
 and distinctly labeled in herdr's spaces sidebar.
@@ -110,7 +110,7 @@ A task's `state/<id>.meta` records `window=<target>`:
 - herdr: `window=<session>:<pane-id>` (e.g. `default:w1:p2`) plus
   `backend=herdr`.
 
-A meta with no `backend=` line means tmux. Souschef does not write
+A meta with no `backend=` line means tmux. Chef does not write
 `backend=tmux` for a default-path task, so existing and newly spawned tmux metas
 stay byte-identical - recovery, `sc-send`, `sc-peek`, `sc-teardown`, and the
 watcher all keep working unchanged. Only a non-tmux task carries an explicit
@@ -121,7 +121,7 @@ adapter.
 
 Station chefs (secondmates) are supported on herdr: a station chef's cooks land
 in the station chef's **own** herdr workspace (`sc-2ndmate-<id>`), derived from
-its home marker, not the primary's. Each station chef is itself a Souschef home,
+its home marker, not the primary's. Each station chef is itself a Chef home,
 so it resolves its own backend the same way (its own `SC_BACKEND` /
 `config/backend` / auto-detect).
 

@@ -93,5 +93,5 @@ Automated setup done. Finish these manual steps yourself:
   3. The first cook spawn clears the harness trust dialog once per
      directory; after that, dispatch runs unattended.
 
-Then start the souschef and it will run bootstrap clean.
+Then start Chef and it will run bootstrap clean.
 MANUAL

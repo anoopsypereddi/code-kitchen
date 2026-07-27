@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Self-update a running souschef and its secondmates to the latest origin.
 #
-# Mechanical half of the /updatesouschef skill. Fast-forwards the running
+# Mechanical half of the /update-chef skill. Fast-forwards the running
 # souschef repo's default branch from origin, then fast-forwards every
 # registered secondmate home (each a git worktree of this same repo, or
 # a standalone clone) the same way. FAST-FORWARD ONLY, exactly like
@@ -57,7 +57,7 @@ fi
 
 # --- secondmates -----------------------------------------------------------
 # An updated live secondmate is nudged whenever it advanced (nudge_requires_instr
-# is "no" here): /updatesouschef's nudge is a gentle re-read steer, kept on the
+# is "no" here): /update-chef's nudge is a gentle re-read steer, kept on the
 # same condition it has always used.
 
 FF_NUDGE_WINDOWS=""

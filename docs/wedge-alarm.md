@@ -1,6 +1,6 @@
 # Away-mode injection wedge alarm - active alert channels
 
-The away-mode sub-supervisor (`bin/sc-supervise-daemon.sh`) buffers escalations and injects them into souschef's own pane.
+The away-mode sub-supervisor (`bin/sc-supervise-daemon.sh`) buffers escalations and injects them into Chef's own pane.
 When injection cannot confirm a submit past `SC_MAX_DEFER_SECS` (the pane is genuinely busy or wedged, or its Enter is swallowed), `inject_wedge_alarm` raises a loud, rate-limited alarm so the stall never stays invisible.
 
 ## Why an active channel beyond the status-line flash
@@ -63,27 +63,27 @@ The real `osascript`/`herdr` invocation form is verified once by the bounded man
 ## Verification (macOS, darwin)
 
 Recorded 2026-07-22 on macOS 26.3 (build 25D125), `osascript` at `/usr/bin/osascript`, `herdr` 0.7.x.
-This is the single bounded manual verification (two invocations, one per OS channel), labelled "SOUSCHEF TEST - IGNORE" so the banners are unmistakably harmless.
+This is the single bounded manual verification (two invocations, one per OS channel), labelled "CHEF TEST - IGNORE" so the banners are unmistakably harmless.
 These are the only verification commands that fire real notifications, and they are never run inside a test suite.
 
 ### osascript channel (the exact argv-safe form the daemon runs)
 
 ```
 $ /usr/bin/osascript -e 'on run argv' \
-    -e 'display notification (item 1 of argv) with title "SOUSCHEF TEST - IGNORE" sound name "Basso"' \
-    -e 'end run' "SOUSCHEF TEST - IGNORE (wedge-alarm channel verification)"
+    -e 'display notification (item 1 of argv) with title "CHEF TEST - IGNORE" sound name "Basso"' \
+    -e 'end run' "CHEF TEST - IGNORE (wedge-alarm channel verification)"
 $ echo $?
 0
 ```
 
-Exit 0; a Notification Center banner titled "SOUSCHEF TEST - IGNORE" was posted with the label as its body.
+Exit 0; a Notification Center banner titled "CHEF TEST - IGNORE" was posted with the label as its body.
 In production the title is "souschef: away-mode escalations WEDGED" and the body is the `<age>s undelivered - see <marker>` summary.
 
 ### herdr channel
 
 ```
-$ herdr notification show "SOUSCHEF TEST - IGNORE" \
-    --body "SOUSCHEF TEST - IGNORE (wedge-alarm channel verification)" --sound request
+$ herdr notification show "CHEF TEST - IGNORE" \
+    --body "CHEF TEST - IGNORE (wedge-alarm channel verification)" --sound request
 {"id":"cli:notification:show","result":{"reason":...,"shown":...,"type":"notification_show"}}
 $ echo $?
 0

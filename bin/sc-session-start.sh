@@ -14,7 +14,7 @@
 # and sc-wake-drain.sh as real subprocesses and prints their real output. It
 # never re-implements their logic; all sequencing/formatting added here stays
 # local to this file. Those scripts remain fully working standalone (install
-# consent, /updatesouschef, the afk daemon, and existing tests still call them
+# consent, /update-chef, the afk daemon, and existing tests still call them
 # directly). The one seam bootstrap needed - running its detect-only
 # diagnostics without its mutating sweeps - is SC_BOOTSTRAP_DETECT_ONLY=1 on
 # sc-bootstrap.sh itself, not a fork.

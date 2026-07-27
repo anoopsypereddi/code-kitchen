@@ -1,28 +1,28 @@
 ---
 name: harness-adapters
-description: Agent-only reference for Souschef harness operations. Use before firing or recovering a cook or station chef, handling a trust dialog, sending a harness-specific skill invocation, interrupting or exiting an agent, resuming an exited agent, or verifying a new harness adapter. Contains verified facts for claude, codex, opencode, and pi.
+description: Agent-only reference for Chef harness operations. Use before firing or recovering a cook or station chef, handling a trust dialog, sending a harness-specific skill invocation, interrupting or exiting an agent, resuming an exited agent, or verifying a new harness adapter. Contains verified facts for claude, codex, opencode, and pi.
 user-invocable: false
 ---
 
 # harness-adapters
 
-Use this reference before any harness-specific Souschef operation: fire, recovery, trust-dialog handling, skill invocation, interrupt, exit, resume, or adapter verification.
+Use this reference before any harness-specific Chef operation: fire, recovery, trust-dialog handling, skill invocation, interrupt, exit, resume, or adapter verification.
 
-Cooks default to the same harness Souschef is running on unless `config/crew-harness` records an adapter name.
+Cooks default to the same harness Chef is running on unless `config/crew-harness` records an adapter name.
 The Chef may override that file at bootstrap or later; a per-ticket instruction such as "run this one on codex" overrides it for that fire only.
-`default` means mirror Souschef's own harness.
+`default` means mirror Chef's own harness.
 
 Each adapter splits into mechanics and knowledge.
 The mechanics, including launch command, autonomy flag, and turn-end hook, live in `bin/sc-spawn.sh`.
 The expediting knowledge lives here: busy signature, exit command, interrupt, dialogs, resume behavior, skill invocation, and quirks.
 
 Never fire a cook or station chef on an unverified adapter.
-If `config/crew-harness` names an unverified adapter, tell the Chef and fall back to Souschef's own harness until that adapter is verified.
+If `config/crew-harness` names an unverified adapter, tell the Chef and fall back to Chef's own harness until that adapter is verified.
 If the Chef asks for a new harness, propose verifying it first: fire a trivial supervised ticket using `sc-spawn`'s raw-launch-command escape hatch, confirm every fact empirically, then record the mechanics in `sc-spawn`, the busy signature in `sc-watch.sh` and `sc-tmux-lib.sh` defaults, any needed `SC_COMPOSER_IDLE_RE` empty-composer override, and the verified knowledge here.
 
 ## Detection
 
-`bin/sc-harness.sh` prints Souschef's own harness, using verified env markers first and then process ancestry.
+`bin/sc-harness.sh` prints Chef's own harness, using verified env markers first and then process ancestry.
 `bin/sc-harness.sh crew` resolves the effective cook harness from `config/crew-harness`.
 On `unknown`, ask the Chef instead of guessing.
 A Chef override always beats detection.
@@ -56,9 +56,9 @@ If such a dialog is showing, accept it with `bin/sc-send.sh <window> --key Enter
 
 Claude renders a predicted-next-prompt suggestion as dim/faint text inside an otherwise-empty composer after a turn completes.
 A plain `tmux capture-pane` cannot tell that ghost text apart from typed text.
-Souschef launches every claude cook and station chef with `CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false`, scoped to Souschef-launched agents through `bin/sc-spawn.sh`, so it never touches the Chef's global config.
+Chef launches every claude cook and station chef with `CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false`, scoped to Chef-launched agents through `bin/sc-spawn.sh`, so it never touches the Chef's global config.
 The CLI's `--prompt-suggestions` flag is print/SDK-mode only and does not suppress the interactive composer ghost text, verified empirically on v2.1.186.
-As defense in depth for any pane that flag cannot reach, including the Chef's own Souschef composer that away-mode reads, the pane reader in `bin/sc-tmux-lib.sh` captures only the composer line with ANSI styling, drops dim/faint SGR 2 runs, and ignores them, so only normal-intensity typed text counts as pending input.
+As defense in depth for any pane that flag cannot reach, including the Chef's own Chef composer that away-mode reads, the pane reader in `bin/sc-tmux-lib.sh` captures only the composer line with ANSI styling, drops dim/faint SGR 2 runs, and ignores them, so only normal-intensity typed text counts as pending input.
 That styled capture is internal to the boolean detector only.
 `sc-peek` and every other human or LLM-facing capture path stays plain `tmux capture-pane` with no escape codes.
 

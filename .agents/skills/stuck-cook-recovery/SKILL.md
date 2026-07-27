@@ -1,6 +1,6 @@
 ---
 name: stuck-cook-recovery
-description: Agent-only playbook for stuck Souschef direct reports. Use after a stale wake, looping pane, repeated confusion, an answered-by-brief question, an unresponsive cook, or a failed call. Escalates from peek, to one-line call, to harness-specific interrupt, to relaunch with progress, to failed status.
+description: Agent-only playbook for stuck Chef direct reports. Use after a stale wake, looping pane, repeated confusion, an answered-by-brief question, an unresponsive cook, or a failed call. Escalates from peek, to one-line call, to harness-specific interrupt, to relaunch with progress, to failed status.
 user-invocable: false
 ---
 

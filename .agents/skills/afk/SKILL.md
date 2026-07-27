@@ -8,7 +8,7 @@ user-invocable: true
 
 Away-mode expediting. When invoked, `/afk` makes the daemon's token-saving
 tradeoff **consented** and **explicit**: the Chef is stepping away, so the
-sub-expediter may triage routine wakes in bash instead of waking Souschef's
+sub-expediter may triage routine wakes in bash instead of waking Chef's
 LLM for each one. Escalations still reach the Chef, but as one pre-read,
 batched digest rather than per-wake injections.
 
@@ -18,7 +18,7 @@ batched digest rather than per-wake injections.
    ```sh
    date '+%s' > state/.afk
    ```
-   This file survives a Souschef restart: recovery re-enters afk if the
+   This file survives a Chef restart: recovery re-enters afk if the
    flag is present.
 
 2. **Ensure the sub-expediter daemon is running.** Check the pid file; start
@@ -60,7 +60,7 @@ a false exit is self-correcting (the Chef re-runs `/afk`).
 
 ## Orthogonal to approval authority
 
-afk changes how aggressively Souschef surfaces things, **not who approves
+afk changes how aggressively Chef surfaces things, **not who approves
 what**. "Away" never means "approves more." A PR ready for merge, a
 needs-decision finding, or anything destructive still waits for the Chef's
 explicit word - the daemon just batches the notification.
@@ -68,7 +68,7 @@ explicit word - the daemon just batches the notification.
 ## Sentinel marker contract
 
 The daemon prefixes every injection with `SC_INJECT_MARK` (ASCII unit
-separator, 0x1f), invisible and untypable. This is how Souschef tells a
+separator, 0x1f), invisible and untypable. This is how Chef tells a
 daemon escalation apart from a real message in the same pane. The marker
 travels with the message text; it does not rely on harness-level
 typed-vs-injected detection (which is not portable across claude, codex,
@@ -118,15 +118,15 @@ the same corrected, border-aware detector as the composer guard.
 A bordered-empty claude composer is recognized as submitted rather than
 mistaken for a swallowed Enter.
 `sc-send.sh` uses the same primitive and exits non-zero
-when a call's Enter is positively swallowed, so Souschef learns an instruction
+when a call's Enter is positively swallowed, so Chef learns an instruction
 did not land instead of leaving it unsubmitted.
 
 ## Classification policy
 
 The daemon wraps `sc-watch.sh`, runs the pass as a child, classifies each
 wake reason in bash, and self-handles the routine majority without consuming a
-Souschef turn.
-Only Chef-relevant events escalate to Souschef's context, and even then as
+Chef turn.
+Only Chef-relevant events escalate to Chef's context, and even then as
 one pre-read, single-line, batched digest.
 
 Classify each wake this way:
@@ -134,13 +134,13 @@ Classify each wake this way:
 - `signal` whose status content has no Chef-relevant verb
   (`done:|needs-decision:|blocked:|failed:|PR ready|checks green|ready in branch|merged`)
   -> self-handle. Chef-relevant verb -> escalate.
-- `check` -> always escalate. Check scripts print only when Souschef should wake.
+- `check` -> always escalate. Check scripts print only when Chef should wake.
 - `stale` with a terminal status -> escalate. Non-terminal stale is transient:
   record a marker and self-handle. If the pane is still idle past
   `SC_STALE_ESCALATE_SECS` (default 240s), housekeeping escalates it as a
   possible wedge. This bounds wedge-detection latency to the threshold plus a
   tick: a delay, never a loss. Healthy cooks are autonomous and do not wait
-  on Souschef mid-ticket.
+  on Chef mid-ticket.
 - `heartbeat` -> self-handle. The daemon runs its own cheap bash brigade scan
   every `SC_HEARTBEAT_SCAN_SECS` (default 300s) as the catch-all for a
   Chef-relevant status line the per-wake classifier might miss.
@@ -150,7 +150,7 @@ Escalations are buffered up to `SC_ESCALATE_BATCH_SECS` (default 90s; 0 =
 immediate) and flushed as one single-line digest prefixed with the sentinel
 marker, carrying pre-read status summaries and a recommended action.
 The single-line format makes the submission unambiguous across harnesses, and
-the marker lets Souschef distinguish it from a real Chef message.
+the marker lets Chef distinguish it from a real Chef message.
 
 ## Injection hardening
 
@@ -186,7 +186,7 @@ the marker lets Souschef distinguish it from a real Chef message.
   dim-ghost-aware and border-aware detector so a ghost-only or bordered-empty
   claude composer counts as submitted rather than a false swallowed Enter.
 - **Marker strip** - `strip_injection_marker` removes the sentinel prefix before
-  classification or relay, so the digest text Souschef sees is clean.
+  classification or relay, so the digest text Chef sees is clean.
 - **Portable singleton lock** - the daemon uses the repo's portable lock helper
   (`sc-wake-lib.sh`) instead of `flock`, which is absent on macOS.
 - **Dedupe across signal/stale/scan** - `classify_signal` and `classify_stale`

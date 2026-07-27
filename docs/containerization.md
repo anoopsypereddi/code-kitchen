@@ -55,7 +55,7 @@ and let the brigade run normally.
 ```sh
 bin/sc-container.sh build   # build the image (docker/kitchen.Dockerfile)
 bin/sc-container.sh up       # start the container (daemon up, git+bootstrap run)
-bin/sc-container.sh shell    # attach to the Souschef (tmux + harness)
+bin/sc-container.sh shell    # attach to the Chef (tmux + harness)
 bin/sc-container.sh down     # stop & remove the container; volumes persist
 bin/sc-container.sh nuke     # remove the container AND its volumes (explicit discard)
 ```
@@ -63,7 +63,7 @@ bin/sc-container.sh nuke     # remove the container AND its volumes (explicit di
 - `up` starts the container detached. Its entrypoint configures git for
   HTTPS+token, runs `bin/sc-bootstrap.sh` to confirm a clean detection, and then
   idles.
-- `shell` attaches you to the Souschef inside a persistent tmux session running
+- `shell` attaches you to the Chef inside a persistent tmux session running
   your harness. You interact with the kitchen *through the container*; PRs land
   on GitHub as usual.
 - `down` keeps the named volumes — the kitchen survives a restart (the
@@ -141,7 +141,7 @@ normal and harmless. Supplying `secrets.env` clears it; do **not** copy a host
 
 > **The single container is one shared room.** It isolates agents from the
 > **host**, but **NOT from each other or from the in-container token.** Every
-> Cook and the Souschef run in the same container and can read every credential
+> Cook and the Chef run in the same container and can read every credential
 > inside it — `GH_TOKEN`, `ANTHROPIC_API_KEY`, the git credential helper. A
 > prompt-injected or compromised Cook can read the in-container token and use it
 > within that token's scope, or attempt to exfiltrate anything it can

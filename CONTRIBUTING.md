@@ -27,7 +27,7 @@ A maintainer reviews and merges. There is no separate validation gate to push th
 
 ## Repo conventions
 
-- This repo is a template for running a Souschef orchestrator agent.
+- This repo is a template for running a Chef orchestrator agent.
   `AGENTS.md` is the agent's main job description and names when to load bundled skills; `CLAUDE.md` is a symlink to it, and `.claude/skills` is a symlink to `.agents/skills`.
 - Only shared material is tracked: `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, `.github/workflows/`, `bin/`, and `.agents/skills/`.
   Everything personal to one Chef's brigade (`data/`, `state/`, `config/`, `projects/`) is gitignored; never commit it.
@@ -43,8 +43,8 @@ A maintainer reviews and merges. There is no separate validation gate to push th
 
 ## Development
 
-Tracked changes to Souschef itself - `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, `.github/workflows/`, `bin/`, and agent skill files - go on a feature branch, are validated locally, and reach `main` through a PR the Chef merges.
-When expediting live cooks, keep Souschef's own long validation or build commands in the background so pass wakes can still be handled.
+Tracked changes to Chef itself - `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, `.github/workflows/`, `bin/`, and agent skill files - go on a feature branch, are validated locally, and reach `main` through a PR the Chef merges.
+When expediting live cooks, keep Chef's own long validation or build commands in the background so pass wakes can still be handled.
 A cook validates its own change locally - running the project's lint, format, type, and test commands and getting them green - before it opens its PR.
 
 Check and test the toolbelt before pushing:
@@ -58,7 +58,7 @@ tests/sc-wake-queue.test.sh               # durable wake queue losslessness, cat
 tests/sc-watcher-lock.test.sh             # pass singleton, lock-race, watch-arm liveness, and guard-warning tests
 tests/sc-daemon.test.sh                   # sub-expediter classifier, /afk presence-gating, max-defer, composer, and sc-send submit tests
 tests/sc-send-settle.test.sh              # sc-send post-submit settle pause, tuning, disable, and --key bypass tests
-tests/sc-send-secondmate-marker.test.sh   # sc-send from-Souschef marker for kind=secondmate targets: marked vs cook/explicit/--key, and the exact marker byte sequence
+tests/sc-send-secondmate-marker.test.sh   # sc-send from-Chef marker for kind=secondmate targets: marked vs cook/explicit/--key, and the exact marker byte sequence
 tests/sc-wake-daemon-lifecycle-e2e.test.sh # pass + daemon lifecycle e2e: restart catch-up, batching, dedupe, stale-pane routing, and digest injection
 tests/sc-composer-ghost.test.sh           # dim-ghost stripping, ghost-only composer detection, and escape-free peek tests
 tests/sc-afk-inject-e2e.test.sh           # private-socket end-to-end test of the afk injection path (partial-input deferral, swallowed-Enter retry)
