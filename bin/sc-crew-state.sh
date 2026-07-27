@@ -15,7 +15,7 @@
 # and log reads plus fixed mapping logic, no heuristics and no LLM. Output is one
 # stable, parseable, token-tight line souschef can read every heartbeat:
 #
-#   state: <working|parked|done|blocked|failed|unknown> · source: <pane|status-log|none> · <detail>
+#   state: <working|parked|done|blocked|failed|paused|unknown> · source: <pane|status-log|none> · <detail>
 #
 # Precedence, in order (highest first):
 #   1. pane busy-state - a busy pane means the agent is mid-turn RIGHT NOW, which
@@ -48,6 +48,8 @@ STATE="${SC_STATE_OVERRIDE:-$SC_HOME/state}"
 
 # shellcheck source=bin/sc-backend.sh
 . "$SCRIPT_DIR/sc-backend.sh"
+# shellcheck source=bin/sc-classify-lib.sh
+. "$SCRIPT_DIR/sc-classify-lib.sh"
 
 ID=${1:-}
 [ -n "$ID" ] || { echo "usage: sc-crew-state.sh <id>" >&2; exit 2; }
@@ -80,26 +82,23 @@ if [ -z "$WT" ] || [ ! -d "$WT" ]; then
   emit unknown none "worktree gone (torn down?)"
 fi
 
-# Last non-empty status line, and its leading verb (the word before the colon).
-LOG_LINE=$(grep -v '^[[:space:]]*$' "$LOG" 2>/dev/null | tail -1 || true)
+# Last non-empty status line, and its leading verb (the word before the colon,
+# with any optional "[key=<slug>]" decision token stripped - sc-classify-lib.sh
+# owns that grammar, so a keyed line like "needs-decision [key=x]: ..." still
+# parses to its real verb here).
+LOG_LINE=$(sc_last_status_line "$LOG")
 LOG_VERB=""
 LOG_NOTE=""
 if [ -n "$LOG_LINE" ]; then
-  LOG_VERB=${LOG_LINE%%:*}
-  # Trim surrounding whitespace from the verb.
-  LOG_VERB="${LOG_VERB#"${LOG_VERB%%[![:space:]]*}"}"
-  LOG_VERB="${LOG_VERB%"${LOG_VERB##*[![:space:]]}"}"
-  # The note is everything after the first colon, trimmed.
-  case "$LOG_LINE" in
-    *:*) LOG_NOTE=${LOG_LINE#*:} ;;
-  esac
-  LOG_NOTE="${LOG_NOTE#"${LOG_NOTE%%[![:space:]]*}"}"
-  LOG_NOTE="${LOG_NOTE%"${LOG_NOTE##*[![:space:]]}"}"
+  LOG_VERB=$(sc_status_line_verb "$LOG_LINE")
+  LOG_NOTE=$(sc_status_line_note "$LOG_LINE")
 fi
 
 # Map a status-log verb onto a canonical state. A verb that is not a recognized
 # run-state (e.g. a decision-closing event, or an unknown word) returns unknown -
-# it is NOT the current state.
+# it is NOT the current state. `paused` is the declared external-wait state
+# (sc-classify-lib.sh): the cook is intentionally idle on a known dependency,
+# so the watcher absorbs its stale pane on a long bounded cadence.
 map_verb() {  # <verb>
   case "$1" in
     working)        echo working ;;
@@ -107,6 +106,7 @@ map_verb() {  # <verb>
     blocked)        echo blocked ;;
     done)           echo "done" ;;
     failed)         echo failed ;;
+    paused)         echo paused ;;
     *)              echo unknown ;;
   esac
 }
@@ -131,7 +131,7 @@ crew_pane_is_busy() {  # <backend> <target>
 # its busy signature is not meaningful - read its state from the log only.
 if [ "$KIND" != secondmate ] && [ -n "$TARGET" ] && crew_pane_is_busy "$BACKEND" "$TARGET"; then
   case "$LOG_VERB" in
-    needs-decision|blocked|done)
+    needs-decision|blocked|done|paused)
       emit working pane "harness busy${SEP}status-log ($LOG_VERB) superseded by active pane"
       ;;
     *)

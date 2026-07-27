@@ -147,14 +147,23 @@ The report is the only thing that survives, so anything worth keeping must be in
 3. Use \`gh\` for GitHub operations.
 4. Report status by appending one line:
    \`echo "{state}: {one short line}" >> $STATUS_FILE\`
-   States: working, needs-decision, blocked, done, failed.
+   States: working, needs-decision, blocked, done, failed, paused.
    Each append wakes souschef, so report sparingly: only phase changes a supervisor
    would act on and the needs-decision/blocked/done/failed states. No step-by-step
    FYI progress lines; souschef reads your pane for that.
+   Append \`paused: {what you are waiting for}\` ONLY when deliberately idling on a
+   KNOWN external wait (a vendor rate limit, a scheduled window, long external CI)
+   so the supervisor stops treating your idle pane as stalled; append a fresh
+   status line when you resume. \`paused\` is an expected wait; \`blocked\` means you
+   need souschef's help.
 5. If you hit the same obstacle twice, append \`blocked: {why}\` and stop; souschef will help.
 6. **Never idle silently on a choice that is the Chef's to make.** The moment you hit a product decision, a destructive or irreversible action, or any fork you cannot resolve from this brief, STOP and append exactly:
      \`needs-decision: <one line stating the decision at stake> | options: <A> / <B>[ / <C>][ | recommend: <X>]\`
    The one-liner must stand alone - a supervisor reading only that line must understand the call - and the options must be concrete and mutually exclusive. Then stop and wait. Do NOT guess, do NOT pick silently, do NOT keep working around it. Souschef replies with the decision and you resume from there.
+   If this ticket may raise more than one decision, add a stable key token so each
+   stays durably tracked: \`needs-decision [key=<slug>]: ...\`; when souschef's reply
+   resolves a keyed decision, append \`resolved [key=<slug>]: <the call>\` as you
+   resume so the decision is closed in your status stream.
 
 # Definition of done
 Write your findings to \`$DATA/$ID/report.md\`.
@@ -207,15 +216,24 @@ $RULE1
 3. Use \`gh\` for GitHub operations.
 4. Report status by appending one line:
    \`echo "{state}: {one short line}" >> $STATUS_FILE\`
-   States: working, needs-decision, blocked, done, failed.
+   States: working, needs-decision, blocked, done, failed, paused.
    Each append wakes souschef, so report sparingly: only phase changes a supervisor
    would act on (setup done, bug reproduced, fix implemented, validation passed) and the
    needs-decision/blocked/done/failed states. No step-by-step FYI progress lines;
    souschef reads your pane for that.
+   Append \`paused: {what you are waiting for}\` ONLY when deliberately idling on a
+   KNOWN external wait (a vendor rate limit, a scheduled window, long external CI)
+   so the supervisor stops treating your idle pane as stalled; append a fresh
+   status line when you resume. \`paused\` is an expected wait; \`blocked\` means you
+   need souschef's help.
 5. If you hit the same obstacle twice, append \`blocked: {why}\` and stop; souschef will help.
 6. **Never idle silently on a choice that is the Chef's to make.** The moment you hit a product decision, a destructive or irreversible action, an ask-user finding, or any fork you cannot resolve from this brief, STOP and append exactly:
      \`needs-decision: <one line stating the decision at stake> | options: <A> / <B>[ / <C>][ | recommend: <X>]\`
    The one-liner must stand alone - a supervisor reading only that line must understand the call - and the options must be concrete and mutually exclusive. Then stop and wait. Do NOT guess, do NOT pick silently, do NOT keep working around it. Souschef replies with the decision and you resume from there.
+   If this ticket may raise more than one decision, add a stable key token so each
+   stays durably tracked: \`needs-decision [key=<slug>]: ...\`; when souschef's reply
+   resolves a keyed decision, append \`resolved [key=<slug>]: <the call>\` as you
+   resume so the decision is closed in your status stream.
 
 # Project memory
 If \`AGENTS.md\` or \`CLAUDE.md\` already exists, or if this task produced durable project-intrinsic knowledge, run \`$SC_ROOT/bin/sc-ensure-agents-md.sh .\` in the worktree.

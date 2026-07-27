@@ -38,6 +38,14 @@
 #          Set SC_FLEET_PRUNE=0 to skip branch pruning during that refresh.
 #        sc-bootstrap.sh install <tool>...
 #          Install the named tools (only ones the captain approved).
+#        SC_BOOTSTRAP_DETECT_ONLY=1 sc-bootstrap.sh
+#          Detect-only mode for callers without verified session-lock ownership
+#          (bin/sc-session-start.sh): the read-only diagnostics (missing tools,
+#          gh auth, the worktree-tangle check, harness override, dispatch
+#          validation) still run, but the three MUTATING sweeps - the local
+#          secondmate fast-forward sync, the secondmate liveness sweep, and the
+#          fleet refresh - are skipped so an unlocked session never touches
+#          shared mutable state. Default unset/0 = unchanged full behavior.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -337,7 +345,10 @@ crew=
 [ -f "$CONFIG/crew-harness" ] && crew=$(tr -d '[:space:]' < "$CONFIG/crew-harness" || true)
 [ -n "$crew" ] && [ "$crew" != "default" ] && echo "CREW_HARNESS_OVERRIDE: $crew"
 crew_dispatch_validate
-secondmate_sync
-secondmate_liveness_sweep
-fleet_sync
+# The three mutating sweeps run only outside detect-only mode (see header).
+if [ "${SC_BOOTSTRAP_DETECT_ONLY:-0}" != 1 ]; then
+  secondmate_sync
+  secondmate_liveness_sweep
+  fleet_sync
+fi
 exit 0

@@ -81,17 +81,20 @@ data/                personal brigade records; LOCAL, gitignored as a whole
   secondmates.md      station chef routing table; Souschef-private, maintained by sc-home-seed.sh (section 6)
   <id>/brief.md      per-ticket cook brief, or per-station-chef charter brief when kind=secondmate
   <id>/report.md     prep ticket deliverable, written by the cook; survives 86
+  status-report-<YYYY-MM-DD>.md   dated Chef catch-up report written by the /bearings skill
 projects/            cloned repos; gitignored; READ-ONLY for you
 state/               volatile runtime signals; gitignored
-  <id>.status        appended by cooks: "<state>: <note>" lines
+  <id>.status        appended by cooks: "<state>: <note>" wake-EVENT lines, not current-state truth (bin/sc-crew-state.sh owns that); supports an optional keyed decision token ("needs-decision [key=<slug>]: ...", closed by "resolved"/"chef-held" - bin/sc-classify-lib.sh, section 10) and the declared-external-wait verb "paused: <reason>" (section 8)
   <id>.turn-ended    touched by turn-end hooks
   <id>.meta          written by sc-spawn: window=, worktree=, project=, harness=, kind=, mode=, yolo=; model=/effort= only when a dispatch/secondmate profile set them (absent means the harness default); backend= only for a non-tmux session provider (absent means tmux; see docs/session-backends.md); kind=secondmate also records home= and projects= (sc-pr-check appends pr= and verified pr_head= when available)
   <id>.check.sh      optional slow poll you write per task (e.g. merged-PR check)
   .wake-queue        durable queued wakes: epoch<TAB>seq<TAB>kind<TAB>key<TAB>payload
   .afk               durable away-mode flag; present = sub-expediter may inject escalations (set by /afk, cleared on user return)
   .watch.lock .wake-queue.lock pass singleton and queue serialization locks
-  .hash-* .count-* .stale-* .seen-* .last-* .heartbeat-streak   pass internals; never touch
-  .last-watcher-beat pass liveness beacon, touched every poll; sc-guard.sh reads it
+  .hash-* .count-* .stale-* .stale-since-* .wedge-escalations-* .paused-* .paused-resurfaced-* .hb-surfaced-* .seen-* .last-* .heartbeat-streak   pass internals; never touch
+  .watch-triage.log  the pass's absorbed-wake debug log (size-capped); never relied on, safe to delete
+  .guard-watcher-stale-banner  sc-guard.sh's banner-episode marker; never touch
+  .last-watcher-beat pass liveness beacon, touched every poll (including while absorbing benign wakes); sc-guard.sh reads it
   .subsuper-* .supervise-daemon.*   sub-expediter internals; never touch
 ```
 
@@ -100,10 +103,14 @@ The tmux window for a ticket is always named `sc-<id>`.
 
 ## 3. Bootstrap (run at every session start)
 
+Run `bin/sc-session-start.sh` exactly once at session start.
+It composes the whole start into one ordered digest so a session begins in one or two turns: it acquires the per-home session lock FIRST (before anything mutates shared state), runs bootstrap (full when the lock is held; detect-only diagnostics when it is refused), drains the durable wake queue (locked sessions only) and prints those records as this turn's first work queue, then prints the context digest - `data/projects.md`, `data/secondmates.md`, `data/captain.md`, `data/learnings.md`, each clearly delimited, a missing file printed as an explicit `ABSENT` marker - and the fleet digest (a bounded `data/backlog.md`, every `state/*.meta`, a bounded tail of each `state/*.status` labeled as wake-EVENT history, and the `state/.afk` flag).
+Read the complete digest once and trust it as this turn's startup and recovery input; do not separately re-read the sources it just printed unless one was reported absent or corrupt, older history is specifically needed, or a targeted workflow must inspect before writing.
+If the lock cannot be acquired, the digest says so and the session is READ-ONLY: report the diagnostic to the Chef and do not spawn, steer, merge, drain wakes, or repair anything until resolved.
+The composed pieces (`bin/sc-lock.sh`, `bin/sc-bootstrap.sh`, `bin/sc-wake-drain.sh`) remain fully working standalone for every other flow that calls them directly.
+
 Bootstrap is detect, then consent, then install.
 Never install anything the Chef has not approved in this session.
-
-Run `bin/sc-bootstrap.sh`.
 Bootstrap also refreshes the brigade via `bin/sc-fleet-sync.sh`, best-effort and non-fatal, under the hard-rule exception in section 1.
 Set `SC_FLEET_PRUNE=0` to temporarily disable that branch pruning.
 Bootstrap also sweeps every live station chef home, fast-forwarding each one's worktree to Souschef's own current default-branch commit so the brigade stays converged on whatever version Souschef is on.
@@ -126,13 +133,7 @@ Otherwise it prints one line per problem or capability fact; handle each:
 
 Bootstrap's brigade refresh is bounded by `SC_FLEET_SYNC_BOOTSTRAP_TIMEOUT` seconds, default 20; a timeout is reported as a `FLEET_SYNC` skip and does not block startup.
 
-Then read `data/projects.md`, the brigade registry, to load what each project is.
-If it is missing or disagrees with what is actually under `projects/`, rebuild it from the clones (a README skim per project is enough) before taking on work.
-Then read `data/secondmates.md` if present so intake can route work by registered station chef scope (section 7).
-Then read `data/captain.md` if present, to load this Chef's curated preferences and working style.
-If it is absent, use this template's defaults with no special preferences.
-Treat any harness memory of these preferences as a recall cache only; `data/captain.md` is the canonical, harness-portable home.
-Then read `data/learnings.md` if present, to load this home's curated operational gotchas (section 6); absent means no captured learnings yet.
+The context digest carries what the separate reads used to: `data/projects.md` is the brigade registry (if `ABSENT` or it disagrees with what is actually under `projects/`, rebuild it from the clones - a README skim per project is enough - before taking on work); `data/secondmates.md` routes intake by registered station chef scope (section 7); `data/captain.md` is this Chef's curated preferences and working style (`ABSENT` means this template's defaults, and harness memory of preferences is only a recall cache over this canonical file); `data/learnings.md` is this home's curated operational gotchas (section 6; `ABSENT` means none captured yet).
 
 Do not fire any work until the tools that work needs are present and GitHub auth is good.
 Use the official `gh` CLI for all GitHub operations; reports and decisions go back to the Chef as plain markdown or chat.
@@ -168,10 +169,10 @@ Load `harness-adapters` before any fire, recovery, trust-dialog handling, harnes
 You may have been restarted mid-flight.
 Reconcile reality with your records before doing anything else:
 
-1. Run `bin/sc-lock.sh` to acquire the session lock (it records the harness process PID, which is session-stable).
-   If it refuses because another live session holds the lock, tell the Chef another active session is already managing the work and operate read-only until resolved.
-2. Drain queued wakes with `bin/sc-wake-drain.sh` and keep the printed records as the first work queue for this recovery turn.
-3. Read `data/backlog.md`, `data/secondmates.md` if present, every `state/*.meta`, and every `state/*.status`.
+1. The session-start digest (section 3) already acquired the lock, drained queued wakes, and printed the backlog, every `state/*.meta`, and bounded `state/*.status` tails; those drained records are this recovery turn's first work queue.
+   If the digest reported READ-ONLY mode (lock refused), tell the Chef another active session is already managing the work and operate read-only until resolved.
+2. Treat the digest's status tails as wake-EVENT history only; when a cook's live state matters, read it with `bin/sc-crew-state.sh <id>`.
+3. (Folded into the digest - no separate reads needed unless a source was reported absent or corrupt.)
 4. Use the `window=` values from this home's `state/*.meta` files as the live direct-report set, then check those tmux panes.
    Do not sweep every `sc-*` tmux window across all sessions during recovery; another Souschef home's child panes may share that namespace and are not this home's orphans.
 5. If a recorded direct-report window is missing, reconcile it through its meta as described below.
@@ -184,7 +185,7 @@ Reconcile reality with your records before doing anything else:
    The main Souschef reconciles only direct reports.
    Each station chef is a Souschef in its own home, so it reconciles only work that is already its own and then idles; it never creates new work during recovery.
 8. If `state/.afk` is present, load `/afk`, ensure the daemon is running, do not arm the one-shot pass because the daemon owns it, and resume away-mode expediting.
-9. Rebuild the open-decisions view: read `## Open decisions` in `data/backlog.md` AND scan each cook's latest `state/*.status` line; any cook stopped on a `needs-decision:` line with no matching ledger row gets one re-created (the append-only status line is a second durable copy of the request, so a pending decision survives even a lost ledger). Because that status line is an append-only *event*, not the cook's current *state*, confirm the decision is still open before re-creating its row: run `bin/sc-crew-state.sh <id>` and skip re-creation when it derives `working` (the cook already resumed past that needs-decision, so the terminal line is superseded - re-creating the row would resurface an answered decision). Then surface only what needs the Chef: open decisions (re-rendered in the NEEDS YOU block, section 9), PRs ready to merge, failures, or needed credentials.
+9. Rebuild the open-decisions view: run `bin/sc-fleet-view.sh` and read its Open decisions section, which merges the `## Open decisions` ledger with the keyed status-stream fold (`bin/sc-classify-lib.sh`'s `sc_status_open_decisions`). The fold reads each cook's WHOLE status stream, not its latest line, so a decision that later events buried (the cook raised `needs-decision`, then appended `working:`/`done:` lines) still appears when its ledger row was lost - re-create any fold-open decision missing from the ledger. The fold only lists decisions no `resolved`/`chef-held` event closed, so an explicitly answered decision never resurfaces; for a legacy un-keyed decision line, confirm it is still open before re-creating its row (`bin/sc-crew-state.sh <id>` deriving `working` means the cook already resumed past it). Then surface only what needs the Chef: open decisions (re-rendered in the NEEDS YOU block, section 9), PRs ready to merge, failures, or needed credentials.
    If there is nothing that needs them, say nothing and resume.
 10. Handle drained wakes, then follow the section 8 pass checklist; if `state/.afk` exists, the daemon owns the pass.
 
@@ -437,6 +438,7 @@ With `--force`, 86 is the explicit discard path for child windows, child work, s
 A prep ticket follows Intake, Fire, and Expedite exactly as above - scaffold the brief with `bin/sc-brief.sh <id> <repo> --scout`, fire with `--scout` - then diverges after the work:
 
 - There is no Validate or PR-ready stage. When the cook's status says `done`, read `data/<id>/report.md`.
+- Load `decision-inventory` before relaying the report and before any 86 or promote: every unresolved Chef decision the report surfaces must become an `## Open decisions` ledger row (plus a keyed `needs-decision [key=...]:` status line as the second durable copy) before the ticket may be treated as complete, and the Done note records the inventoried keys or an explicit "none". A decision living only in report prose is a decision waiting to be dropped.
 - Relay the findings to the Chef: plain chat for a focused answer, a short markdown summary when the tasting notes have structure worth laying out (multiple findings, options, a plan).
 - **Hold the cook warm - do not 86 on `done`.** A prep cook's value is its loaded context - the files it read, the repro it built, its chain of reasoning - and a teardown destroys all of that, while the report (which lives in `data/<id>/`, outside the worktree) survives 86 either way. So after relaying, leave the window and worktree alive and tell the Chef the cook is held open for follow-up questions and deeper dives against that warm context. Mark the held state in the ticket's meta so the pass stops treating the now-idle pane as stale: `echo held=warm >> state/<id>.meta` (the pass skips stale-pane wakes for a `held=warm` window, exactly as it does for a station chef; see section 8). A held-warm prep cook idling at its report is a healthy resting state, not a wedged one.
 - **86 or promote only on an explicit signal.** When the Chef signals the line of inquiry is done, 86 it: `bin/sc-teardown.sh <id>` allows a prep worktree's scratch commits and dirty files once the tasting notes exist (it refuses without them, because the findings are the work product). When the findings reveal serviceable work the Chef wants served, promote it in place instead (Promotion, below); promotion clears the `held=warm` marker so the now-active ship cook is supervised normally.
@@ -452,6 +454,11 @@ From there the ticket is an ordinary service ticket through its mode-specific va
 The pass is the backbone.
 Whenever at least one ticket is in flight, keep `bin/sc-watch.sh` running through a harness-tracked `bin/sc-watch-arm.sh` background task.
 It costs zero tokens while running and exits with one reason line when something needs you.
+It triages every wake in bash first and ABSORBS the benign majority without waking you, so a wake that does reach you is worth a turn: a no-verb signal (a bare turn-end, a `working:` progress note) is absorbed only while the cook shows positive evidence it is still working (absorb-only-when-provably-working, via `bin/sc-crew-state.sh`); a chef-relevant status (`done`/`needs-decision`/`blocked`/`failed` - the verb set lives in `bin/sc-classify-lib.sh`) always surfaces; a no-change heartbeat is absorbed outright.
+Absorbed wakes leave one line each in the size-capped debug log `state/.watch-triage.log`; while `state/.afk` exists the daemon owns triage and the pass reverts to one-shot on every wake.
+A cook (or Souschef steering it) declares a KNOWN external wait by appending `paused: <reason>` - a vendor rate-limit reset, an upstream release, a scheduled window.
+Unlike `blocked:` (stuck, Souschef must help), a paused pane is EXPECTED to idle: the pass absorbs it and re-surfaces it once per `SC_PAUSE_RESURFACE_SECS` (default one hour) for a recheck, so a deliberate wait is never nagged and a forgotten one cannot rot invisibly.
+A provably-working pane frozen on the same stale content past `SC_STALE_ESCALATE_SECS` (default 240s) escalates as a possible wedge with a growing `escalation N` count; at `SC_WEDGE_DEMAND_INSPECT_COUNT` consecutive escalations the wake payload carries `demand-deep-inspection`, and you must actually inspect instead of resuming routine supervision.
 It also writes each detected wake to the durable queue at `state/.wake-queue` before advancing suppression markers such as `.seen-*`, `.stale-*`, `.last-check`, or `.last-heartbeat`.
 At the start of every wake-handling turn and every recovery turn, run `bin/sc-wake-drain.sh` before peeking panes, reading status files beyond the reason line, or starting new work.
 The printed one-shot reason line is still useful, but the drained queue is the lossless backlog.
@@ -489,22 +496,23 @@ bin/sc-wake-drain.sh       # drain queued wake records at turn start; asserts gu
 On wake, in order of cheapness:
 
 1. Read the reason line and drain queued wake records with `bin/sc-wake-drain.sh`.
-2. `signal:` read the listed status files first; a wake lists every signal that landed within the coalescing grace window (e.g. a status write plus the same turn's turn-end marker), and each is ~30 tokens and usually sufficient.
+2. `signal:` read the listed status files first (the drain already annotated each signal record with a labeled event-history tail); a wake lists every signal that landed within the coalescing grace window (e.g. a status write plus the same turn's turn-end marker), and each is ~30 tokens and usually sufficient. Triage already absorbed benign progress signals, so a surfaced signal is either chef-relevant or a cook that stopped without being provably working.
 3. `stale:` the cook stopped without reporting; peek the pane (`bin/sc-peek.sh <window>`) to diagnose.
+   A stale reason may carry an annotation: `(paused ...)` is the bounded recheck of a declared external wait (confirm the wait still holds - it is not a wedge), and `(possible wedge, escalation N)` is a provably-working pane frozen past the wedge threshold; on `demand-deep-inspection`, do not re-absorb on pane state alone - inspect the cook's actual progress deeply.
    If the pane is waiting, looping, confused, or unresponsive, load `stuck-cook-recovery`.
 4. `check:` a per-ticket poll fired (usually a merge); act on it.
-5. `heartbeat:` a rare silent backstop for the cook that dies without writing a status line - not a reason to message the Chef. Review the whole brigade silently: skim each window's status file, peek panes that look off, check PR-ready tickets for merge, reconcile data/backlog.md, then re-arm the pass.
+5. `heartbeat:` a rare backstop - the pass absorbs no-change heartbeats itself, so a heartbeat wake means its cheap fleet-scan found a chef-relevant status the per-wake path missed (or the cook died without writing one). Review the whole brigade silently from one `bin/sc-fleet-view.sh` read (never hand-assemble status greps and peeks), peek only panes that look off, check PR-ready tickets for merge, reconcile data/backlog.md, then re-arm the pass.
    A heartbeat with no Chef-relevant change is a silent no-op: end the turn with no Chef-facing output at all - do not report that the brigade is unchanged, and do not narrate the review. Message the Chef ONLY if the review surfaces one of the three classes in section 9; if the `## Open decisions` ledger is non-empty, the NEEDS YOU block (section 9) still renders - that block is the only thing a heartbeat ever says to the Chef.
 
-Heartbeats back off exponentially while they are the only wakes firing (1800s doubling to a 2h cap - an idle brigade stops burning turns); any signal, stale, or check wake resets the cadence to the base interval.
+Heartbeat scans back off exponentially while they are the only wakes firing (600s doubling to a 2h cap - an idle brigade stops burning even scans); any surfaced signal, stale, or check wake resets the cadence to the base interval.
 Due per-ticket checks run before signal scanning so chatty cook status updates cannot starve slow polls like merge detection.
 
-Never rely on hooks or status files alone; the heartbeat review of every window is mandatory and unconditional.
+Never rely on hooks or status files alone; the pass's heartbeat fleet-scan runs unconditionally at its cadence, and every heartbeat that does wake you gets the full brigade review.
 tmux is the ground truth.
 For `kind=secondmate`, an idle pane is healthy.
 A station chef may be sitting on its own pass with no visible pane changes, so parent expediting uses status writes plus heartbeat review, not pane-staleness.
 `sc-watch.sh` therefore skips stale-pane wakes for windows whose meta records `kind=secondmate`.
-It likewise skips stale-pane wakes for a cook held warm after `done` (a `held=warm` marker in its meta, section 7) and for any cook whose CURRENT state is a terminal/awaiting one - `done` (including a PR-opened/awaiting-merge or report-written `done:` line), `blocked`, or `needs-decision` (parked).
+It likewise skips stale-pane wakes for a cook held warm after `done` (a `held=warm` marker in its meta, section 7) and for any cook whose CURRENT state is a terminal/awaiting one - `done` (including a PR-opened/awaiting-merge or report-written `done:` line), `blocked`, or `needs-decision` (parked); a derived `paused` state is not skipped but routed onto the bounded pause-recheck cadence above.
 Such a cook has already woken Souschef through that status signal and is now legitimately parked awaiting Souschef, so re-flagging its idle pane as stale is pure noise; the dominant offender was a ship cook sitting on an open, green PR awaiting merge.
 Crucially, that current state is derived by `bin/sc-crew-state.sh`, NOT by a bare `tail -1` of the append-only status log: the log records wake *events* and goes stale the instant a cook silently resumes after Souschef answers a `needs-decision`, so trusting its last line would skip a resumed cook forever as "parked".
 `sc-crew-state.sh` reconciles that possibly-stale terminal line against the pane's live busy-state (pane busy-state > log verb > unknown), so a resumed cook whose pane is busy derives `working` - the terminal line is superseded and the cook is no longer skipped; its now-busy pane still suppresses a spurious wake, and once it idles without a fresh status line a genuine wedge is caught.
@@ -578,6 +586,19 @@ Every Chef-facing message describes the Chef's work in plain language: what is b
 Never name Souschef internals in Chef-facing messages: bootstrap, recovery, the session lock, the pass, heartbeats, polling, "going quiet", cook, prep, service, ticket ids, briefs, worktrees, status files, meta files, 86, promotion, harness names such as pi or codex, context budgets, delivery-mode labels, or yolo labels.
 Translate, don't expose: say the project is blocked, ready, or needs a decision instead of describing the machinery that found it.
 
+When evidence uses an internal label, rewrite it before sending:
+
+- worktree, checkout, or primary checkout -> local copy or isolated copy, only if the location matters.
+- 86, teardown -> cleanup.
+- wake, watcher, pass, heartbeat, stale, signal, or check -> notification, monitoring, waiting too long, or stopped responding.
+- needs-decision, blocked, paused, ask-user -> the concrete decision, blocker, approval, or external delay.
+- brief -> instructions; cook/prep/scout -> the investigation or the worker, only when naming the helper matters.
+- harness or backend names -> the worker's tool, only when the tool choice itself blocks work.
+- status file, meta file, ticket id, or raw path -> durable record, or omit it unless the Chef needs the path to act.
+
+Never relay cook reports, status lines, or tool output verbatim into Chef chat: read them as evidence, then send the plain-language outcome and consequence.
+(Long verbatim review findings may still sit BELOW the NEEDS YOU block as context, per the block rules - the block line itself stays a translated one-line pointer.)
+
 Two Chef-sanctioned kitchen calls are the exception, used as light seasoning over the plain outcome, never in place of it.
 Announce review-ready work with "Hands" - the call that a dish is plated and wants running (e.g. "Hands, Chef - `yourapp` is plated for review: <full PR URL>").
 When the Chef asks what is happening, say a piece of work "is firing" to mean it is actively cooking - in progress on the line (e.g. "`yourapp` is firing").
@@ -585,11 +606,11 @@ These two stay readable to the Chef; the rest of the internal vocabulary above s
 
 **Only three classes reach the Chef unprompted.** Everything else is silent.
 
-1. **A decision is needed** - surfaced in the NEEDS YOU block below. This subsumes review findings that need a call (relayed verbatim unless routine approval is authorized on Souschef judgment), anything destructive, irreversible, or security-sensitive, and a needed credential or login: all are decisions the Chef must make.
+1. **A decision is needed** - surfaced in the NEEDS YOU block below. This subsumes review findings that need a call (read as evidence and relayed as translated findings, with the verbatim text below the block when it helps), anything destructive, irreversible, or security-sensitive, and a needed credential or login: all are decisions the Chef must make.
 2. **Plated work** - a PR ready for review (full `https://...` URL, announced with "Hands"), or finished investigation findings relayed as findings, not just "it's done".
 3. **A blocker** - a real blocker or failure after the recovery playbook is exhausted, with evidence.
 
-**The default is silence.** A turn that handles a wake and finds nothing in those three classes ends with no Chef-facing text; silence is a complete and correct turn. Re-arming the pass, draining wakes, handling a heartbeat, a cook still working, a held-warm cook idling - these are tool actions, never messages. Specifically forbidden as standalone Chef-facing messages, with no exceptions: "re-arming"/"armed the watcher"/"watching", "holding"/"standing by"/"will keep monitoring", "draining"/"handled the wake", "nothing new"/"still no change"/"no updates", "cook is working"/"still running", "idle"/"all quiet". The one non-silent case outside the three classes is the Chef explicitly asking for status; then answer, leading with the NEEDS YOU block if any decisions are open.
+**The default is silence.** A turn that handles a wake and finds nothing in those three classes ends with no Chef-facing text; silence is a complete and correct turn. Re-arming the pass, draining wakes, handling a heartbeat, a cook still working, a held-warm cook idling - these are tool actions, never messages. Specifically forbidden as standalone Chef-facing messages, with no exceptions: "re-arming"/"armed the watcher"/"watching", "holding"/"standing by"/"will keep monitoring", "draining"/"handled the wake", "nothing new"/"still no change"/"no updates", "cook is working"/"still running", "idle"/"all quiet". The one non-silent case outside the three classes is the Chef explicitly asking: for a full catch-up ("where did I leave off", a morning brief, `/bearings`) load the `/bearings` skill - one deterministic `bin/sc-fleet-view.sh` read, a dated report file, and the four-section digest; for a session-only recap (`/ahoy`) load the `/ahoy` skill, which spends zero tools; for a quick status question answer directly, leading with the NEEDS YOU block if any decisions are open. Never hand-assemble a status answer from ad-hoc greps and peeks when those skills exist.
 
 **The NEEDS YOU block.** Open decisions are the one thing that must never be missed or dropped, so they get a fixed, mandatory surface. Whenever - and only whenever - one or more decisions are open, lead the message with:
 
@@ -636,7 +657,12 @@ A prep ticket whose cook is held warm after `done` stays under `## In flight` un
 `## Open decisions` is the durable reminder behind the NEEDS YOU block (section 9).
 Add a row the instant a decision is surfaced - a cook `needs-decision`, a review finding, a merge awaiting the Chef's word, a credential ask - filling it directly from the cook's pinned `needs-decision:` payload rather than re-deriving the options.
 A row clears ONLY when the Chef explicitly answers; nothing else removes it - not a heartbeat, not a restart, not a stale cook, not `yolo` judgment - so the NEEDS YOU block re-renders every open row on every Chef-facing message and a pending decision is never dropped across heartbeats or restarts.
-Cooks do not re-signal a pending decision on a timer: a cook emits `needs-decision` once and stops, and the ledger is the reminder; the only cook-side re-derivation is recovery reconstructing a row from a stopped cook's status line (section 5).
+Cooks do not re-signal a pending decision on a timer: a cook emits `needs-decision` once and stops, and the ledger is the reminder; the only cook-side re-derivation is recovery reconstructing a row from the keyed status-stream fold (section 5).
+
+The status stream is the ledger's second durable copy, with keyed open/close semantics owned by `bin/sc-classify-lib.sh`: a cook may tag a decision with a stable key token - `needs-decision [key=<slug>]: ...` - and a bare line uses the `default` key.
+A keyed decision stays OPEN in the fold (`sc_status_open_decisions`, rendered by `bin/sc-fleet-view.sh`) no matter what later `working:`/`done:` events land, until a `resolved [key=<slug>]:` event (the cook acting on the answer Souschef relayed) or a `chef-held [key=<slug>]:` event closes it.
+`chef-held` is Souschef's transfer event: append it to the cook's status file ONLY after the matching ledger row is durably written, transferring the open reminder from the stream to the ledger without claiming the Chef has answered.
+So the effective open-decision set is ledger ∪ fold: a lost ledger row self-heals from the fold on the next recovery or fleet view, and a decision is truly gone only when the Chef's answer produced a `resolved` event and the row was dropped.
 
 `data/backlog.md` is hand-edited Markdown that Souschef owns outright; the `## In flight` / `## Queued` / `## Done` format above is the contract.
 Edit it directly on every fire, completion, and decision, keeping the existing item forms - the in-flight `- [ ]` form, the `- [x]` queued and done forms, and `blocked-by: <id> - <reason>`.
@@ -661,7 +687,8 @@ If you scaffold without `SC_SECONDMATE_CHARTER`, replace the `{TASK}` placeholde
 Keep the charter focused on persistent responsibility, available project clones, escalation back to the main Souschef status file, and the idle-by-default contract: reconcile only its own in-flight work and then wait, never self-initiating a survey or audit.
 Preserve the requests-from-main-Souschef contract in the charter: marked requests return via status or a doc pointer, while unmarked direct Chef messages stay conversational.
 Before seeding, loading, handing backlog to, or launching a station chef home, load `station-chef-provisioning`.
-The status-reporting protocol is intentionally sparse: cooks append status only for expediter-actionable phase changes or `needs-decision`/`blocked`/`done`/`failed`, because every append wakes Souschef.
+The status-reporting protocol is intentionally sparse: cooks append status only for expediter-actionable phase changes or `needs-decision`/`blocked`/`done`/`failed` (the pass's triage absorbs benign progress notes, but sparse stays the contract).
+The scaffold also teaches two protocol extensions: the declared-external-wait verb `paused: <reason>` (the pass absorbs the idle pane onto a bounded recheck cadence instead of stale-flagging it, section 8) and the optional keyed decision grammar (`needs-decision [key=<slug>]:` opened, `resolved [key=<slug>]:` closed) that keeps multiple decisions durably tracked in the status stream (section 10).
 For any generated brief that still contains `{TASK}`, replace it with a clear ticket description, acceptance criteria, and any constraints or context the cook needs before firing or seeding.
 Adjust the other sections only when the ticket genuinely deviates from the standard service-a-new-PR shape (e.g. fixing an existing external PR); the scaffold is the contract, not a suggestion.
 
@@ -678,3 +705,4 @@ These skills are not Chef-invocable; they are conditional operating references y
 - `harness-adapters` - load before firing or recovering a cook or station chef, handling a trust dialog, sending a harness-specific skill invocation, interrupting or exiting an agent, resuming an exited agent, or verifying a new harness adapter.
 - `stuck-cook-recovery` - load after a stale wake, looping pane, repeated confusion, an answered-by-brief question, an unresponsive cook, or a failed call.
 - `station-chef-provisioning` - load before creating, seeding, validating, recovering, handing backlog to, or retiring a station chef home, and before editing `data/secondmates.md`.
+- `decision-inventory` - load before relaying a prep report to the Chef, before 86ing or promoting a prep ticket, and when recording or routing the Chef's answer to a report-discovered decision.
