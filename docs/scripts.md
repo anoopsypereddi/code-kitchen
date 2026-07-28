@@ -5,6 +5,7 @@ Each file also starts with a short header comment.
 
 | Script                   | Description                                                                                                         |
 | ------------------------ | ------------------------------------------------------------------------------------------------------------------- |
+| `sc-session-start.sh`    | Acquire the per-home session lock, run startup bootstrap, drain queued wakes, and print the bounded context/fleet digest for recovery |
 | `sc-bootstrap.sh`        | Detect required toolchain problems, optional capability facts, and primary-checkout `TANGLE:` problems; locally sync live station chef homes; refresh clones best-effort; install tools only after consent |
 | `sc-fleet-sync.sh`       | Fetch clones, clean-fast-forward their checked-out default branches, and safely prune branches whose remote is gone |
 | `sc-update.sh`           | Self-update the running Chef repo and registered station chef homes with fast-forward-only pulls from origin        |
@@ -16,11 +17,15 @@ Each file also starts with a short header comment.
 | `sc-spawn.sh`            | Fire one ticket, several `id=repo` pairs, or a persistent station chef with `--secondmate`; service/prep fires carve an isolated git worktree via `sc-worktree.sh`; station chef fires locally sync the home before launch; creates the cook's terminal container through the selected session-provider backend (`sc-backend.sh`) and records `backend=` for a non-tmux one |
 | `sc-worktree.sh`         | code-kitchen's native git-worktree manager (replaces treehouse): `get [--lease --lease-holder <id>]` carves an isolated worktree off the latest default tip and prints its path; `return [--force] <path>` kills lingering processes and removes it; `status`/`prune` list and reclaim. Worktree root: `$SC_WORKTREE_ROOT` (default `$SC_HOME/worktrees`, a `worktrees/` dir inside the Chef home, sibling of `projects/` and gitignored) |
 | `sc-project-mode.sh`     | Resolve a project's delivery mode and `+yolo` flag from `data/projects.md`                                          |
+| `sc-dispatch-select.sh`  | Resolve one already-matched `config/crew-dispatch.json` rule or profile array into a concrete harness/model/effort JSON profile, including the deterministic `quota-balanced` strategy |
 | `sc-merge-local.sh`      | Fast-forward a `local-only` project's local default branch after approval                                           |
+| `sc-ship.sh`             | Land an approved ship task through the project's delivery mechanism: enqueue in a GitHub merge queue, squash-merge a green PR, or delegate `local-only` work to `sc-merge-local.sh` |
 | `sc-review-diff.sh`      | Review a cook branch against the authoritative base, with optional `--stat` output; degrades to the best available base when origin is offline |
 | `sc-marker-lib.sh`       | Shared from-Chef request marker and detector sourced by `sc-send.sh`, `sc-brief.sh`, and tests                     |
 | `sc-watch-arm.sh`        | Verified per-home pass re-arm; reports `started`, `healthy`, or `FAILED`; `--restart` relaunches only this home's pass |
 | `sc-watch.sh`            | Singleton-safe one-shot pass; blocks until expediting work is due, queues it durably, then exits with one reason line |
+| `sc-crew-state.sh`       | Read a cook's deterministic current state by reconciling live pane busy-state with the append-only status event log |
+| `sc-fleet-view.sh`       | Render a read-only markdown view of one home: open decisions, underway tasks with current state, queued work, and scout reports |
 | `sc-supervise-daemon.sh` | Presence-gated sub-expediter for walk-away (`/afk`) expediting: wraps `sc-watch.sh`, self-handles routine wakes in bash, and escalates only Chef-relevant events as one verified, batched, single-line digest prefixed with a sentinel marker |
 | `sc-tangle-lib.sh`       | Shared default-branch resolution and primary-checkout tangle classification sourced by bootstrap and guard         |
 | `sc-turnend-guard.sh`    | Primary-scoped turn-end (Stop) hook: BLOCKS the turn (exit 2) when a task is in flight and no live watcher holds the home lock; loop-guarded to one forced continuation per turn; inert in cook worktrees (see [supervision-hooks.md](supervision-hooks.md)) |
@@ -39,14 +44,18 @@ Each file also starts with a short header comment.
 | `sc-tmux-lib.sh`         | Shared tmux pane primitives for busy detection, dim-ghost-aware and border-aware composer detection, and verified submit retry |
 | `sc-backend.sh`          | Session-provider backend selection (`SC_BACKEND`/`config/backend`/auto-detect/tmux), meta helpers, selector resolution, and per-op dispatch (spawn/send/peek/kill/busy-state) to `bin/backends/*.sh`; see [session-backends.md](session-backends.md) |
 | `backends/tmux.sh`       | The default tmux session-provider adapter (window per cook); the same tmux commands the scripts ran inline, so the default path is byte-identical |
-| `backends/herdr.sh`      | Experimental [herdr](https://herdr.dev) adapter: spawns each cook as a native herdr pane so cooks are visible inside herdr; needs `herdr` (protocol >= 14, verified through protocol 16 / herdr 0.7.4) and `jq` |
+| `backends/herdr.sh`      | Experimental [herdr](https://herdr.dev) adapter: spawns each cook as a native herdr pane grouped by per-project workspace; needs `herdr` (protocol >= 14, verified through protocol 16 / herdr 0.7.4) and `jq` |
 | `sc-install-herdr.sh`    | Install a pinned, verified herdr build (0.7.4 / protocol 16): official release asset for the host OS/arch, bounded download, SHA-256 pin, post-install version+protocol gate; never a floating package-manager latest |
 | `sc-herdr-lab.sh`        | Provision and operate an isolated `sc-lab-*` herdr session (name/prepare/provision/run/stop/teardown) with a fleet-state tripwire; refuses the default session and any lifecycle op through `run` |
 | `sc-herdr-ci-cleanup.sh` | Bounded snapshot/teardown of CI-owned `sc-lab-*` herdr sessions; never touches the default session; no-op when herdr is absent |
 | `sc-peek.sh`             | Print a bounded tail of a cook pane (backend-aware capture via `sc-backend.sh`)                                     |
 | `sc-pr-check.sh`         | Record `pr=` and a verified `pr_head=` when available for a PR-ready ticket, then arm the pass's merge poll         |
+| `sc-check-lib.sh`        | Authenticated watcher-check helpers for generated `state/*.check.sh` polls: validate ids/PR URLs, hash-bind checks, and run private snapshots |
 | `sc-promote.sh`          | Promote a prep ticket in place so it becomes a protected service ticket                                             |
 | `sc-teardown.sh`         | Return a clean, landed service worktree or retire/release a station chef home; requires prep tasting notes, checks child work, and prints the backlog reminder |
 | `sc-harness.sh`          | Detect the running harness; resolve the effective cook harness                                                     |
 | `sc-lock.sh`             | Per-home Chef session lock                                                                                          |
 | `sc-container.sh`        | Build/run the optional containerized kitchen (`build`/`up`/`shell`/`down`/`nuke`) on named volumes with a `--env-file` secrets drop; opt-in, native operation is unchanged |
+| `sc-lint.sh`             | Single owner of the ShellCheck lint definition: pinned version, canonical file set, optional path-specific linting, and `--required-version` for CI |
+| `sc-test-run.sh`         | Single owner of behavior-test execution: serially run `tests/*.test.sh`, list the executed set, or verify coverage with `--check-coverage` |
+| `sc-install-shellcheck.sh` | Install CI's pinned, checksum-verified Linux x86_64 ShellCheck build into a destination directory                 |

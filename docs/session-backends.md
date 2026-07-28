@@ -85,11 +85,13 @@ sessions only.
   scripts ran inline before, so the default path is byte-identical).
 - `bin/backends/herdr.sh` - the herdr adapter (adapted from the
   [firstmate](https://github.com/kunchenguid/firstmate) reference, verified
-  there against real herdr through v0.7.4 / protocol 16). When Chef runs **inside** a
-  herdr pane (detected via `HERDR_SOCKET_PATH` / `HERDR_ENV`) a server is already
-  running, so the adapter never launches a second `herdr server`: a transiently
-  missed `status` probe only retries and, failing that, errors out - launching a
-  duplicate would bind the same socket and split cooks across two servers.
+  there against real herdr through v0.7.4 / protocol 16). It groups cook tabs by
+  project workspace, with secondmate project workspaces home-qualified to avoid
+  collisions. When Chef runs **inside** a herdr pane (detected via
+  `HERDR_SOCKET_PATH` / `HERDR_ENV`) a server is already running, so the adapter
+  never launches a second `herdr server`: a transiently missed `status` probe
+  only retries and, failing that, errors out - launching a duplicate would bind
+  the same socket and split cooks across two servers.
 
 `sc-spawn.sh`, `sc-send.sh`, `sc-peek.sh`, `sc-teardown.sh`, and `sc-watch.sh`
 all route their terminal operations through `sc-backend.sh` rather than calling
@@ -97,10 +99,21 @@ tmux directly.
 
 ### Container shape (herdr)
 
-One herdr **workspace per Chef home** (the primary is labeled `souschef`;
-each station chef is `sc-2ndmate-<id>`), one herdr **tab (pane) per cook** inside
-that workspace. The workspace-per-home layout keeps every home's cooks grouped
-and distinctly labeled in herdr's spaces sidebar.
+One herdr **workspace per project**, one herdr **tab (pane) per cook** inside
+that project's workspace. A project cook fired from the primary home uses a
+workspace named `sc-<project-basename>` (for example, `projects/code-kitchen`
+lands in `sc-code-kitchen`). This lets herdr's project navigation move between
+project workspaces while normal tab navigation moves between cooks for the
+current project.
+
+Cross-home isolation is preserved by qualifying secondmate project workspaces
+with the secondmate id: a secondmate working `projects/code-kitchen` lands in
+`sc-2ndmate-<id>-code-kitchen`, so it cannot collide with the primary's
+`sc-code-kitchen` workspace in the same herdr session.
+
+A station-chef launch is the exception because it is not a project cook: when
+the primary launches a `kind=secondmate` agent, its workspace is still the
+home-based `sc-2ndmate-<id>` label.
 
 ### Meta and the compatibility contract
 
@@ -119,11 +132,12 @@ adapter.
 
 ## Station chefs
 
-Station chefs (secondmates) are supported on herdr: a station chef's cooks land
-in the station chef's **own** herdr workspace (`sc-2ndmate-<id>`), derived from
-its home marker, not the primary's. Each station chef is itself a Chef home,
-so it resolves its own backend the same way (its own `SC_BACKEND` /
-`config/backend` / auto-detect).
+Station chefs (secondmates) are supported on herdr. The station chef agent
+itself lands in its home-based `sc-2ndmate-<id>` workspace when the primary
+launches it. Its project cooks then land in per-project workspaces qualified by
+that station chef id, such as `sc-2ndmate-<id>-code-kitchen`. Each station chef
+is itself a Chef home, so it resolves its own backend the same way (its own
+`SC_BACKEND` / `config/backend` / auto-detect).
 
 ## Known limitations
 
