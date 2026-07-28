@@ -58,7 +58,7 @@ test_config_selects() {
   d=$(casedir config-selects)
   mkdir -p "$d/config"
   printf 'herdr\n' > "$d/config/backend"
-  out=$( SC_CONFIG_OVERRIDE="$d/config" in_fresh_backend 'sc_backend_name' )
+  out=$( SC_BACKEND='' SC_CONFIG_OVERRIDE="$d/config" in_fresh_backend 'sc_backend_name' )
   [ "$out" = herdr ] || fail "config/backend=herdr must select herdr, got '$out'"
   pass "config/backend selects the backend when no env is set"
 }
@@ -68,7 +68,7 @@ test_config_blank_lines_ignored() {
   d=$(casedir config-blank)
   mkdir -p "$d/config"
   printf '\n\n  herdr  \n' > "$d/config/backend"
-  out=$( SC_CONFIG_OVERRIDE="$d/config" in_fresh_backend 'sc_backend_name' )
+  out=$( SC_BACKEND='' SC_CONFIG_OVERRIDE="$d/config" in_fresh_backend 'sc_backend_name' )
   [ "$out" = herdr ] || fail "config/backend must use the first non-empty line, got '$out'"
   pass "config/backend ignores leading blank lines and whitespace"
 }
@@ -77,7 +77,7 @@ test_tmux_default_when_nothing_set() {
   local d out
   d=$(casedir tmux-default)
   mkdir -p "$d/config"  # no backend file
-  out=$( TMUX='' HERDR_ENV='' SC_CONFIG_OVERRIDE="$d/config" in_fresh_backend 'sc_backend_name' )
+  out=$( SC_BACKEND='' TMUX='' HERDR_ENV='' SC_CONFIG_OVERRIDE="$d/config" in_fresh_backend 'sc_backend_name' )
   [ "$out" = tmux ] || fail "with nothing configured the default must be tmux, got '$out'"
   pass "tmux is the default when nothing is configured or detected"
 }
@@ -86,7 +86,7 @@ test_tmux_autodetect() {
   local d out
   d=$(casedir tmux-autodetect)
   mkdir -p "$d/config"
-  out=$( TMUX=/tmp/fake,1,0 HERDR_ENV='' SC_CONFIG_OVERRIDE="$d/config" in_fresh_backend 'sc_backend_name 2>/dev/null' )
+  out=$( SC_BACKEND='' TMUX=/tmp/fake,1,0 HERDR_ENV='' SC_CONFIG_OVERRIDE="$d/config" in_fresh_backend 'sc_backend_name 2>/dev/null' )
   [ "$out" = tmux ] || fail "TMUX present must auto-detect tmux, got '$out'"
   pass "auto-detect resolves tmux from \$TMUX"
 }
@@ -107,8 +107,8 @@ esac
 exit 0
 SH
   chmod +x "$fakebin/herdr"
-  out=$( TMUX='' HERDR_ENV=1 PATH="$fakebin:$PATH" SC_CONFIG_OVERRIDE="$d/config" in_fresh_backend 'sc_backend_name 2>/dev/null' )
-  err=$( TMUX='' HERDR_ENV=1 PATH="$fakebin:$PATH" SC_CONFIG_OVERRIDE="$d/config" in_fresh_backend 'sc_backend_name 2>&1 >/dev/null' )
+  out=$( SC_BACKEND='' TMUX='' HERDR_ENV=1 PATH="$fakebin:$PATH" SC_CONFIG_OVERRIDE="$d/config" in_fresh_backend 'sc_backend_name 2>/dev/null' )
+  err=$( SC_BACKEND='' TMUX='' HERDR_ENV=1 PATH="$fakebin:$PATH" SC_CONFIG_OVERRIDE="$d/config" in_fresh_backend 'sc_backend_name 2>&1 >/dev/null' )
   [ "$out" = tmux ] || fail "auto-detected but not-ready herdr must fall back to tmux, got '$out'"
   assert_contains "$err" "falling back to tmux" "not-ready herdr auto-detect must warn about the tmux fallback"
   pass "auto-detected herdr falls back to tmux (with a warning) when herdr is not ready"
