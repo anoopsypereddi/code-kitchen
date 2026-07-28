@@ -139,6 +139,7 @@ tmux stays the default and the fallback; see [docs/session-backends.md](docs/ses
 
 - [docs/architecture.md](docs/architecture.md) - how the brigade, expediting, stations, station chefs, and delivery modes work.
 - [docs/configuration.md](docs/configuration.md) - environment variables, homes, the files you set, and harness support.
+- [docs/lavish-axi.md](docs/lavish-axi.md) - optional guarded Lavish AXI browser review through code-kitchen's control plane.
 - [docs/scripts.md](docs/scripts.md) - the `bin/` toolbelt reference.
 - [docs/session-backends.md](docs/session-backends.md) - the tmux/herdr session-provider backends: selecting one, requirements, and limitations.
 - [docs/containerization.md](docs/containerization.md) - the optional containerized kitchen: host boundary, mounts, credentials, and usage.
