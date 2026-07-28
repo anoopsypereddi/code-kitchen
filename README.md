@@ -142,6 +142,7 @@ tmux stays the default and the fallback; see [docs/session-backends.md](docs/ses
 - [docs/scripts.md](docs/scripts.md) - the `bin/` toolbelt reference.
 - [docs/session-backends.md](docs/session-backends.md) - the tmux/herdr session-provider backends: selecting one, requirements, and limitations.
 - [docs/containerization.md](docs/containerization.md) - the optional containerized kitchen: host boundary, mounts, credentials, and usage.
+- [docs/tooling-strategy.md](docs/tooling-strategy.md) - the current decision on firstmate, AXI tools, lavish-axi, and no-mistakes.
 - [`AGENTS.md`](AGENTS.md) - the Chef's full operating manual.
 - [CONTRIBUTING.md](CONTRIBUTING.md) - how to contribute, including the dev/test commands.
 

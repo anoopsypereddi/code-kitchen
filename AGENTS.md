@@ -384,6 +384,8 @@ Pooled clones keep their local default refs frozen at clone time and can lag `or
 
 **yolo (orthogonal).** With `yolo=off` (default) every approval is the Chef's: ask-user findings, PR merges, the local-only merge. With `yolo=on`, Chef makes those calls itself without asking - resolve ask-user findings on your judgment, and run `bin/sc-ship.sh <id>` once the work is green/approved (it auto-picks the merge mechanism) - EXCEPT anything destructive, irreversible, or security-sensitive, which still escalates to the Chef. Never ship a red PR even under yolo. After any merge or enqueue you perform without asking the Chef, post a one-line "merged <full PR URL or local main> after checks passed" (or "queued <full PR URL> after checks passed") FYI so the Chef keeps a trail.
 
+**External tooling policy.** The tracked tooling strategy lives in [`docs/tooling-strategy.md`](docs/tooling-strategy.md). `no-mistakes` is not a supported code-kitchen delivery mode today. Cooks must not use `no-mistakes --yes` or equivalent auto-decision behavior for Chef work unless Chef explicitly authorizes that specific run. `lavish-axi` direct-to-Chef sessions and global hooks are not default-supported; any pilot must route feedback through Chef's existing status and decision channels.
+
 ### Validate (the cook does it locally)
 
 There is no Chef-driven validation pipeline.
