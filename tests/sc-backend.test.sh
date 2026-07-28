@@ -24,6 +24,10 @@ BACKEND_LIB="$ROOT/bin/sc-backend.sh"
 # must not be relied on to persist without a fresh mkdir).
 TMP_ROOT=$(sc_test_tmproot sc-backend)
 
+# The invoking harness may set SC_BACKEND for real operations. These tests own
+# backend selection explicitly per case, so clear any ambient selector first.
+unset SC_BACKEND
+
 # casedir <name>: a fresh, existing subdir for one test.
 casedir() {
   local d="$TMP_ROOT/$1"
