@@ -117,7 +117,7 @@ jobs:
 
           run_counted tests/sc-worktree.test.sh 8
           run_counted tests/sc-wake-queue.test.sh 7
-          run_counted tests/sc-watcher-lock.test.sh 21
+          run_counted tests/sc-watcher-lock.test.sh 22
           run_counted tests/sc-update.test.sh 9
 
   invariants:
