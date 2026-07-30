@@ -46,16 +46,26 @@ mkdir -p config
 echo herdr > config/backend
 ```
 
-### Safe auto-detect
+### Herdr-only under herdr (no silent tmux fallback)
 
-An **explicit** `SC_BACKEND=herdr` / `config/backend=herdr` is a hard choice: if
-herdr or `jq` is missing, or the herdr build is too old, the spawn fails loudly
-so you know to fix it. **Auto-detected** herdr is gentler: it is confirmed ready
-(CLI + `jq` present, protocol recent enough) before it is committed, and if it
-is not ready it falls back to **tmux** with a one-line warning rather than
-turning every spawn into a hard failure. A ready auto-detected herdr prints one
-loud `NOTICE` (it is experimental) and can be opted out of with
-`config/backend=tmux` or `SC_BACKEND=tmux`.
+When Chef is running **inside herdr** (`HERDR_ENV=1`, no `$TMUX`), a spawn must
+never silently land in tmux: a tmux cook is structurally invisible to
+`herdr pane list` and cannot be watched from the herdr session, so a silent
+fallback would strand cooks unwatchable. Therefore:
+
+- **Auto-detected herdr always resolves to `herdr`**, ready or not. A ready herdr
+  prints one loud `NOTICE` (it is experimental). An **unready** herdr (CLI or
+  `jq` missing, or the build too old) does **not** fall back to tmux - it prints
+  a loud error and still resolves to `herdr`, so the spawn's own version/tool
+  gate then aborts with the specific reason. Fix herdr; do not let cooks leak
+  into an invisible tmux.
+- **Explicit `SC_BACKEND=herdr` / `config/backend=herdr`** behaves the same hard
+  way it always has: if herdr is unusable the spawn fails loudly.
+- Running cooks in tmux under herdr is still possible, but only **deliberately**:
+  set `config/backend=tmux` or `SC_BACKEND=tmux`. These explicit opt-outs win
+  before auto-detection, so they are the one, non-silent way to choose tmux.
+- On a **non-herdr** home (no herdr and no `$TMUX` detected) the default stays
+  **tmux** - herdr-only applies only when herdr is actually the runtime.
 
 ## Requirements for herdr
 

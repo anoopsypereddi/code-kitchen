@@ -53,6 +53,55 @@ function rawMentionsProtected(command) {
   return /(?:^|[/\s'"`(])sc-watch(?:-arm)?\.sh\b/.test(normalizeLineContinuations(command));
 }
 
+// Command-introducing keywords: a protected token immediately after one of these
+// is an INVOCATION of the watcher, not an argument.
+const COMMAND_INTRODUCER_WORDS = new Set(["do", "then", "else", "elif", "if", "while", "until", "!"]);
+// Wrapper words that run their following command; a protected token right after
+// one is still an invocation, so treat it as one (fail-closed).
+const WRAPPER_INTRODUCER_WORDS = new Set(["exec", "command", "sudo", "nohup", "env", "timeout", "gtimeout", "eval", "xargs"]);
+
+// rawTokenIsCommandPosition: does the protected token at `tokenStart` sit in a
+// COMMAND position (an invocation) rather than an ARGUMENT/read-path position, by
+// inspecting only what precedes it in the raw text? Deliberately conservative -
+// an ambiguous or write-redirection boundary is treated as an invocation.
+function rawTokenIsCommandPosition(source, tokenStart) {
+  let i = tokenStart - 1;
+  while (i >= 0 && (source[i] === " " || source[i] === "\t" || source[i] === '"' || source[i] === "'")) i -= 1;
+  if (i < 0) return true; // start of the command
+  const ch = source[i];
+  if (";\n&|(){}`".includes(ch)) return true; // command separator / group opener
+  if (ch === ">") return true; // a write redirection ONTO the watcher path (fail-closed)
+  let end = i + 1;
+  while (i >= 0 && !" \t\n;&|(){}`\"'<>".includes(source[i])) i -= 1;
+  const word = source.slice(i + 1, end);
+  if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(word)) return true; // VAR=val prefix before the command word
+  if (COMMAND_INTRODUCER_WORDS.has(word)) return true;
+  if (WRAPPER_INTRODUCER_WORDS.has(word)) return true;
+  // Preceded by an ordinary command word (grep/cat/ps/echo/head/tail/sed ...), a
+  // for-loop `in` list, or a `<` read redirection: an argument / read path, not
+  // an invocation.
+  return false;
+}
+
+// rawInvokesProtected: true only when the protected watcher script appears in a
+// COMMAND position in the raw text (an actual invocation or a write onto it),
+// never when it appears solely as an ARGUMENT to another command or a read path.
+// This is the fail-closed backstop for UNSUPPORTED compound grammars the
+// structured parser cannot model; supported grammars never consult it, because
+// directProtected/nestedProtected already classify their command positions. It
+// replaces the blunt "mentions the path anywhere" test that used to deny ordinary
+// read-only inspection (grep/cat/... bin/sc-watch.sh) inside a for/while/if.
+function rawInvokesProtected(command) {
+  const source = normalizeLineContinuations(command);
+  const re = /(^|[\s;&|(){}`'"])((?:[A-Za-z0-9._~+-]*\/)*sc-watch(?:-arm)?\.sh)\b/g;
+  let match;
+  while ((match = re.exec(source)) !== null) {
+    const tokenStart = match.index + match[1].length;
+    if (rawTokenIsCommandPosition(source, tokenStart)) return true;
+  }
+  return false;
+}
+
 function rawMentionsBroadKill(command) {
   const normalized = normalizeLineContinuations(command);
   return /sc-watch/.test(normalized) && /\b(?:pkill|kill)\b/.test(normalized);
@@ -853,7 +902,12 @@ function analyzeProgram(command, context, depth = 0) {
   const protectedFound = directProtected || nestedProtected || unclassifiableProtected;
   if (unclassifiableProtected) unsupported = true;
   const broadKillFound = broadKill || (unsupported && rawMentionsBroadKill(command));
-  if (unsupported && (protectedFound || rawMentionsProtected(command) || broadKillFound)) {
+  // Fail-closed on an unsupported grammar ONLY when it could actually INVOKE the
+  // watcher (a command-position mention) or broad-kill it - never for a grammar
+  // that merely NAMES the path as an argument/read-path (ordinary read-only
+  // inspection wrapped in a for/while/if). rawInvokesProtected, not the old blunt
+  // rawMentionsProtected, is what draws that line.
+  if (unsupported && (protectedFound || rawInvokesProtected(command) || broadKillFound)) {
     return { error: "unsupported compound grammar", protectedFound: true, broadKill: broadKillFound, pgrepWatcher, watcherPids: activeContext.watcherPids, program, nodeInfos };
   }
   return { error: "", protectedFound, directProtected, nestedProtected, broadKill: broadKillFound, pgrepWatcher, watcherPids: activeContext.watcherPids, program, nodeInfos };

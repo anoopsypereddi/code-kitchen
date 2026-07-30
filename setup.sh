@@ -73,6 +73,18 @@ else
   echo "gh: authenticated ✓"
 fi
 
+# 3b. Seed this home's LOCAL recovery/operational permission allow-list into
+#     .claude/settings.local.json so a harness auto-mode permission classifier can
+#     never wedge souschef out of its own recovery path (bin/sc-teardown.sh etc.).
+#     Idempotent and non-destructive; deliberately does NOT allow sc-ship.sh /
+#     sc-merge-local.sh so the never-merge gate keeps its speed bump.
+say "Recovery permission allow-list (.claude/settings.local.json)"
+if [ -x bin/sc-seed-permissions.sh ]; then
+  bin/sc-seed-permissions.sh || echo "warning: could not seed the recovery allow-list (continuing)"
+else
+  echo "bin/sc-seed-permissions.sh not found; skipping."
+fi
+
 # 4. The manual steps that cannot be scripted.
 cat <<'MANUAL'
 

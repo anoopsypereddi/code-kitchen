@@ -514,15 +514,59 @@ test_arm_starts_and_self_heals() {
   pass "arm starts+confirms a fresh watcher on a clean lock and self-heals a dead-pid lock (never healthy off a dead pid)"
 }
 
-test_arm_hup_leaves_watcher_and_cleans_temp() {
-  # HUP/TERM to the arm (e.g. a background-job harness reaping the tracked task)
-  # must NOT take the detached watcher down with it - supervision has to survive
-  # an arm teardown, and the next re-arm will observe the watcher as healthy. The
-  # arm must still exit with the signal status and drop its own temp output. The
-  # OLD behavior killed the child on HUP, which is exactly what silently took
-  # supervision offline when a harness reaped the arm's process group.
-  local dir state fakebin armout i armpid lock_pid status
-  dir=$(make_case arm-hup-cleanup)
+test_arm_signal_takes_watcher_down_no_orphan() {
+  # A signal to the arm (a harness reaping the tracked background task, by a pid
+  # signal OR a process-group reap) must take the watcher DOWN with it, never
+  # leave it as an untracked orphan. The watcher is a same-process-group child
+  # (no setsid detach), and the arm's HUP/TERM trap kills it, so whichever way the
+  # harness reaps, no beating-but-untracked watcher survives to fool the next
+  # re-arm into "healthy" and then die silently. This is the core resilience fix:
+  # the OLD design detached the watcher and deliberately left it running on the
+  # arm's signal, which is exactly what stranded supervision when the harness
+  # reaped the arm. The arm still exits with the signal status and drops its temp.
+  local sig code label row dir state fakebin armout i armpid lock_pid status j
+  for row in "HUP 129" "TERM 143"; do
+    sig=${row%% *}; code=${row##* }
+    dir=$(make_case "arm-reap-$sig")
+    state="$dir/state"
+    fakebin="$dir/fakebin"
+    armout="$dir/arm.out"
+    PATH="$fakebin:$PATH" SC_STATE_OVERRIDE="$state" SC_POLL=1 SC_SIGNAL_GRACE=1 SC_CHECK_INTERVAL=999999 SC_HEARTBEAT=999999 "$WATCH_ARM" > "$armout" &
+    armpid=$!
+    i=0
+    while [ "$i" -lt 80 ]; do
+      grep -qF 'watcher: started pid=' "$armout" 2>/dev/null && break
+      sleep 0.1
+      i=$((i + 1))
+    done
+    grep -qF 'watcher: started pid=' "$armout" || fail "[$sig] arm did not start before the reap check"
+    lock_pid=$(cat "$state/.watch.lock/pid" 2>/dev/null || true)
+    [ -n "$lock_pid" ] || fail "[$sig] no watcher pid recorded in the lock"
+    is_live_non_zombie "$lock_pid" || fail "[$sig] watcher not live before the reap"
+    kill -"$sig" "$armpid" 2>/dev/null || fail "[$sig] could not signal the arm"
+    wait_for_exit "$armpid" 80
+    status=$?
+    [ "$status" -eq "$code" ] || fail "[$sig] arm did not exit with the signal status (want $code, got $status)"
+    ! ls "$state"/.watch-arm-output.* >/dev/null 2>&1 || fail "[$sig] left temp output behind"
+    # The watcher must be gone (no orphan). Poll briefly for the trap's TERM to land.
+    j=0
+    while [ "$j" -lt 40 ] && is_live_non_zombie "$lock_pid"; do sleep 0.1; j=$((j + 1)); done
+    ! is_live_non_zombie "$lock_pid" || { kill "$lock_pid" 2>/dev/null || true; fail "[$sig] watcher survived the arm reap as an ORPHAN"; }
+  done
+  pass "arm reap (HUP/TERM) takes the watcher down with it - no untracked orphan - and cleans its temp"
+}
+
+test_arm_watcher_shares_arm_process_group() {
+  # Root-cause guard: the watcher must be a NORMAL child in the arm's process
+  # group, NOT setsid-detached into its own session. If it ever gets its own pgid
+  # again, a harness process-group reap of the arm would orphan it (the original
+  # bug). Assert the source carries no setsid detach and that a live watcher's
+  # pgid equals its arm's pgid.
+  local dir state fakebin armout i armpid lock_pid arm_pgid watch_pgid
+  # Reject an actual setsid detach in CODE (ignore the comments that explain why
+  # it is forbidden): no `setsid` command and no perl POSIX::setsid launch.
+  grep -vE '^[[:space:]]*#' "$WATCH_ARM" | grep -qE 'setsid' && fail "sc-watch-arm.sh must not setsid-detach the watcher (orphan risk)"
+  dir=$(make_case arm-samegroup)
   state="$dir/state"
   fakebin="$dir/fakebin"
   armout="$dir/arm.out"
@@ -534,21 +578,17 @@ test_arm_hup_leaves_watcher_and_cleans_temp() {
     sleep 0.1
     i=$((i + 1))
   done
-  grep -qF 'watcher: started pid=' "$armout" || fail "arm did not start before HUP check"
+  grep -qF 'watcher: started pid=' "$armout" || fail "arm did not start before the pgid check"
   lock_pid=$(cat "$state/.watch.lock/pid" 2>/dev/null || true)
-  kill -HUP "$armpid" 2>/dev/null || fail "could not send HUP to arm"
-  wait_for_exit "$armpid" 80
-  status=$?
-  [ "$status" -eq 129 ] || fail "arm did not exit with HUP status (got $status)"
-  ! ls "$state"/.watch-arm-output.* >/dev/null 2>&1 || fail "HUP left temp output behind"
-  # The detached watcher must still be alive after the arm is gone, and keep
-  # beating (poll=1s): sample twice so this proves a running loop, not a race.
-  is_live_non_zombie "$lock_pid" || fail "HUP took the detached watcher down with the arm"
-  sleep 2
-  is_live_non_zombie "$lock_pid" || fail "detached watcher died shortly after the arm's HUP"
+  arm_pgid=$(ps -o pgid= -p "$armpid" 2>/dev/null | tr -d ' ')
+  watch_pgid=$(ps -o pgid= -p "$lock_pid" 2>/dev/null | tr -d ' ')
+  [ -n "$watch_pgid" ] || fail "could not read the watcher's process group"
+  [ "$watch_pgid" = "$arm_pgid" ] || fail "watcher pgid ($watch_pgid) != arm pgid ($arm_pgid) - it was detached (orphan risk)"
+  kill -TERM "$armpid" 2>/dev/null || true
+  wait "$armpid" 2>/dev/null || true
   kill "$lock_pid" 2>/dev/null || true
   wait "$lock_pid" 2>/dev/null || true
-  pass "arm HUP leaves the detached watcher running and cleans its temp output"
+  pass "arm keeps the watcher in its own process group (no setsid orphan detach)"
 }
 
 test_arm_propagates_immediate_wake_before_confirmation() {
@@ -686,7 +726,8 @@ test_watch_restart_rejects_reused_pid
 test_watcher_self_evicts_on_lock_takeover
 test_arm_reports_healthy_for_live_fresh_watcher
 test_arm_starts_and_self_heals
-test_arm_hup_leaves_watcher_and_cleans_temp
+test_arm_signal_takes_watcher_down_no_orphan
+test_arm_watcher_shares_arm_process_group
 test_arm_propagates_immediate_wake_before_confirmation
 test_arm_waits_for_peer_beacon_after_child_stands_down
 test_arm_fails_loud_when_no_fresh_watcher_confirmable

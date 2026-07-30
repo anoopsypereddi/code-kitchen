@@ -49,9 +49,15 @@ fresh beacon alone is not proof, because a dead pid can leave a recent beacon.
    (`watcher-bundled` / `watcher-nested`); running `sc-watch.sh` directly
    (`watcher-direct`); and a broad `pkill`/`kill` of the watcher
    (`broad-watcher-kill`). A standalone `bin/sc-watch-arm.sh`, optionally
-   preceded by a blessed `cd`/`export` setup node, is allowed. This is the only
-   guard that is not primary-scoped: arming the watcher wrong is a mistake
-   anywhere, and it fires only on commands that name the protected script.
+   preceded by a blessed `cd`/`export` setup node, is allowed. It fires only on
+   an actual INVOCATION (or write-onto / broad-kill) of the protected script,
+   never on a mere mention of the path as an argument or read file to another
+   command: ordinary read-only inspection like `grep POLL bin/sc-watch.sh` or
+   `cat bin/sc-watch.sh` - even wrapped in a `for`/`while`/`if` the parser cannot
+   fully model - is allowed, while a real invocation inside such a compound (an
+   arm in a loop body, `sc-watch.sh` as an `if`-condition) still denies as
+   `unclassifiable-protected-command`. This is the only guard that is not
+   primary-scoped: arming the watcher wrong is a mistake anywhere.
 
 4. **cd-guard** - `bin/sc-cd-command-policy.mjs` via `bin/sc-cd-pretool-check.sh`.
    Blocks a persistent top-level `cd`/`pushd`/`popd` that would relocate the
@@ -102,6 +108,30 @@ capability beyond this blind-turn guard set and is intentionally not ported here
 OpenCode and pi therefore get the structural guard (which forces the model to
 re-arm) but not automatic re-arm. The opencode/pi turn-end guards fire standalone
 off the shared predicate rather than deferring to an arm coordinator.
+
+## Recovery is never permission-blocked
+
+The continuity gate deliberately always allows the recovery trio
+(`sc-wake-drain.sh`, `sc-watch-arm.sh`, the literal `sc-teardown.sh`) so a blind
+primary can always restore supervision. But that only governs the hook layer -
+a harness's *auto-mode permission classifier* is a separate gate, and it can deny
+those same recovery commands. If it does, and the agent cannot edit the tracked
+`.claude/settings.json` to allow them (correctly - that file is hook-owned), the
+home is wedged out of recovery with no way out but a human. That exact deadlock
+was observed live.
+
+To make it structurally impossible, `bin/sc-seed-permissions.sh` seeds a recovery
+/ operational allow-list into the LOCAL, gitignored `.claude/settings.local.json`
+of each home - idempotently and non-destructively (it unions into
+`permissions.allow`, preserving every existing entry and other keys, and refuses
+to overwrite a malformed file). `setup.sh` seeds it on a fresh machine and
+`bin/sc-bootstrap.sh` re-seeds it each session start (non-detect-only path), so
+every main home and station chef home pre-approves its own recovery path. It
+deliberately does NOT pre-approve `sc-ship.sh` or `sc-merge-local.sh`, so the
+never-merge-without-the-captain's-word gate keeps its speed bump. This is
+CLAUDE-specific (`.claude/`); the supervision hooks above are already wired for
+codex/opencode/pi, but seeding *their* permission allow-lists is a follow-up
+(those harnesses use different permission models).
 
 ## Verification
 
