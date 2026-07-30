@@ -5,3 +5,8 @@ data/
 .DS_Store
 .env
 config/
+# LOCAL, per-home Claude settings (recovery allow-list seeded by
+# bin/sc-seed-permissions.sh, plus the crewmate turn-end Stop hook sc-spawn
+# writes). Tracked .claude/settings.json is the shared hook wiring and stays
+# committed; only the .local overlay is per-home and gitignored.
+.claude/settings.local.json

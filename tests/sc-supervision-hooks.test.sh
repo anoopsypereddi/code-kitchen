@@ -386,6 +386,43 @@ test_arm_rejects_direct_watch_and_broad_kill() {
   pass "sc-arm-command-policy: rejects direct sc-watch.sh and a broad watcher pkill"
 }
 
+# Regression: a READ-ONLY command that merely NAMES the watcher path - even inside
+# an unsupported compound grammar (for/while/if) - must NOT be denied. The old
+# blunt "mentions the path anywhere" fail-closed denied ordinary inspection
+# (grep/cat bin/sc-watch.sh) as [unclassifiable-protected-command], which made the
+# "everything is broken" wedge far worse. Only an actual INVOCATION is deniable.
+test_arm_allows_readonly_mentions_in_compounds() {
+  local out
+  # The single-quoted commands are literal policy INPUTS ($f/$l are not meant to
+  # expand here); they are test fixtures, not shell to run.
+  # shellcheck disable=SC2016
+  for out in \
+    "$(arm_policy 'grep -n POLL bin/sc-watch.sh')" \
+    "$(arm_policy 'cat bin/sc-watch.sh')" \
+    "$(arm_policy 'for f in bin/sc-watch.sh; do grep POLL $f; done')" \
+    "$(arm_policy 'cat bin/sc-watch.sh | while read l; do echo x; done')" \
+    "$(arm_policy 'if grep -q POLL bin/sc-watch.sh; then echo y; fi')" \
+    "$(arm_policy 'ps aux | grep sc-watch | grep -v grep')"
+  do
+    [ "$out" = allow ] || fail "a read-only watcher mention must be allowed, got: $out"
+  done
+  pass "sc-arm-command-policy: allows read-only inspection that only names the watcher (incl. inside for/while/if)"
+}
+
+# The fail-closed stance still holds: a genuine INVOCATION of the watcher inside an
+# unsupported compound grammar, a write-redirection ONTO the watcher path, and a
+# direct-condition invocation must all stay denied.
+test_arm_denies_invocation_in_compounds() {
+  local out
+  out=$(arm_policy 'for i in 1 2; do bin/sc-watch-arm.sh; done')
+  assert_contains "$out" "protected-command" "arm invoked in a for-loop body must be denied"
+  out=$(arm_policy 'if bin/sc-watch.sh; then echo y; fi')
+  assert_contains "$out" "protected-command" "watch run as an if-condition must be denied"
+  out=$(arm_policy 'for f in 1; do echo x > bin/sc-watch.sh; done')
+  assert_contains "$out" "protected-command" "a write-redirect onto the watcher path must be denied"
+  pass "sc-arm-command-policy: still denies a real watcher invocation/overwrite inside a compound grammar"
+}
+
 # --- CD GUARD ---------------------------------------------------------------
 
 run_cd() {
@@ -545,6 +582,8 @@ test_continuity_inert_in_worktree
 test_arm_allows_bare_arm
 test_arm_rejects_background
 test_arm_rejects_direct_watch_and_broad_kill
+test_arm_allows_readonly_mentions_in_compounds
+test_arm_denies_invocation_in_compounds
 test_cd_blocks_primary_cd_into_clone
 test_cd_allows_safe_forms_in_primary
 test_cd_inert_in_worktree

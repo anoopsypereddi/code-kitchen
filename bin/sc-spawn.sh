@@ -488,9 +488,12 @@ fi
 # SC_BACKEND env, then config/backend, then runtime auto-detect, then tmux. tmux
 # is the default and creates a tmux window exactly as before; herdr creates a
 # native herdr pane so the cook is visible in the Chef's herdr session. A
-# per-spawn override is available via SC_BACKEND. Auto-detected herdr that is not
-# ready falls back to tmux (sc_backend_name warns), so a spawn never hard-fails
-# just because herdr/jq are absent.
+# per-spawn override is available via SC_BACKEND. Herdr-only under herdr: when
+# souschef is auto-detected running inside herdr (HERDR_ENV=1) with no explicit
+# tmux opt-out, sc_backend_name returns herdr even if herdr is unready rather than
+# silently falling back to tmux (an invisible tmux cook), so the version/tool gate
+# below fails LOUD with the specific reason. Set config/backend=tmux or
+# SC_BACKEND=tmux to run cooks in tmux on purpose.
 BACKEND=$(sc_backend_name)
 sc_backend_validate_spawn "$BACKEND" || exit 1
 # Source the adapter so its backend-specific container/task functions (called

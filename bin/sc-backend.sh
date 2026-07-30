@@ -82,14 +82,19 @@ sc_backend_detect() {
 # auto-detection (sc_backend_detect), then default tmux. An explicit setting
 # always wins; auto-detect fires only when nothing was configured.
 #
-# Auto-detected herdr is confirmed READY (tool + jq + recent protocol) before it
-# is committed: unlike an explicit SC_BACKEND=herdr / config/backend=herdr - which
-# the operator asked for and which fails loudly if herdr is unusable - a silent
-# auto-detect must not turn every spawn into a hard failure just because jq is
-# missing or the herdr build is too old. If auto-detected herdr is not ready, the
-# resolution falls back to tmux with a one-line stderr warning. A ready
-# auto-detected herdr prints one loud NOTICE (it is experimental) and can be
-# opted out of with config/backend or SC_BACKEND=tmux.
+# Herdr-only when running under herdr: if souschef itself is executing inside
+# herdr (HERDR_ENV=1) and no explicit tmux opt-out was set, a spawn must NEVER
+# silently land in tmux. A tmux cook spawned from a herdr souschef never appears
+# in `herdr pane list` and is structurally unwatchable there, so an unusable herdr
+# must fail LOUD - the operator fixes herdr, it does not silently degrade to an
+# invisible tmux cook. The two explicit controls above (SC_BACKEND, config/backend)
+# still win first, so `config/backend=tmux` / `SC_BACKEND=tmux` remains the
+# deliberate, non-silent way to run cooks in tmux. On auto-detected herdr this
+# returns `herdr` regardless of readiness; when herdr is not ready it also prints a
+# loud stderr line, and the spawn's own version/tool gate then reports the specific
+# problem (old protocol, missing jq, ...) and aborts. A ready auto-detected herdr
+# prints one NOTICE (it is experimental). Auto-detect fires only when nothing was
+# configured; with no runtime detected at all, the default stays tmux.
 sc_backend_name() {
   local line v detected
   if [ -n "${SC_BACKEND:-}" ]; then
@@ -112,8 +117,8 @@ sc_backend_name() {
     if [ "$detected" = herdr ]; then
       sc_backend_source herdr 2>/dev/null || true
       if ! sc_backend_herdr_ready 2>/dev/null; then
-        echo "NOTICE: auto-detected herdr runtime (HERDR_ENV=1) but the herdr CLI/jq are not ready (missing, or protocol too old); falling back to tmux. Install them and set config/backend=herdr to spawn cooks as native herdr panes." >&2
-        printf 'tmux'
+        echo "error: running under herdr (HERDR_ENV=1) but the herdr backend is not ready; refusing to silently fall back to tmux (a tmux cook would be invisible to herdr). The spawn will report the specific herdr problem below. Fix herdr, or set config/backend=tmux (or SC_BACKEND=tmux) to run cooks in tmux on purpose." >&2
+        printf 'herdr'
         return 0
       fi
       echo "NOTICE: auto-detected herdr runtime (HERDR_ENV=1) - spawning cooks into the EXPERIMENTAL herdr backend as native panes. Set config/backend=tmux or SC_BACKEND=tmux to opt out." >&2

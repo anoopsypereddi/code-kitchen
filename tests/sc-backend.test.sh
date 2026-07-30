@@ -91,14 +91,9 @@ test_tmux_autodetect() {
   pass "auto-detect resolves tmux from \$TMUX"
 }
 
-test_herdr_autodetect_falls_back_when_not_ready() {
-  command -v jq >/dev/null 2>&1 || { echo "skip: jq not found"; return 0; }
-  local d fakebin out err
-  d=$(casedir herdr-notready)
-  mkdir -p "$d/config"
-  fakebin=$(sc_fakebin "$d")
-  # A herdr that reports an OLD protocol -> version check fails -> not ready.
-  cat > "$fakebin/herdr" <<'SH'
+# A herdr that reports an OLD protocol -> version check fails -> "not ready".
+make_unready_herdr() {  # <fakebin-dir>
+  cat > "$1/herdr" <<'SH'
 #!/usr/bin/env bash
 case "$1 $2" in
   "status --json") printf '%s' '{"client":{"protocol":1,"version":"old"}}' ;;
@@ -106,12 +101,44 @@ case "$1 $2" in
 esac
 exit 0
 SH
-  chmod +x "$fakebin/herdr"
+  chmod +x "$1/herdr"
+}
+
+# Herdr-only under herdr (the anti-silent-tmux-fallback fix): when souschef is
+# auto-detected running inside herdr (HERDR_ENV=1) with no explicit tmux opt-out,
+# an UNREADY herdr must NOT silently fall back to tmux (an invisible tmux cook).
+# sc_backend_name returns `herdr` regardless of readiness and prints a loud
+# stderr line; the spawn's own version/tool gate then fails with the specifics.
+test_herdr_autodetect_stays_herdr_when_not_ready() {
+  command -v jq >/dev/null 2>&1 || { echo "skip: jq not found"; return 0; }
+  local d fakebin out err
+  d=$(casedir herdr-notready)
+  mkdir -p "$d/config"
+  fakebin=$(sc_fakebin "$d")
+  make_unready_herdr "$fakebin"
   out=$( TMUX='' HERDR_ENV=1 PATH="$fakebin:$PATH" SC_CONFIG_OVERRIDE="$d/config" in_fresh_backend 'sc_backend_name 2>/dev/null' )
   err=$( TMUX='' HERDR_ENV=1 PATH="$fakebin:$PATH" SC_CONFIG_OVERRIDE="$d/config" in_fresh_backend 'sc_backend_name 2>&1 >/dev/null' )
-  [ "$out" = tmux ] || fail "auto-detected but not-ready herdr must fall back to tmux, got '$out'"
-  assert_contains "$err" "falling back to tmux" "not-ready herdr auto-detect must warn about the tmux fallback"
-  pass "auto-detected herdr falls back to tmux (with a warning) when herdr is not ready"
+  [ "$out" = herdr ] || fail "not-ready herdr under HERDR_ENV=1 must stay herdr, not tmux, got '$out'"
+  assert_contains "$err" "refusing to silently fall back to tmux" "not-ready herdr must loudly refuse the tmux fallback"
+  pass "herdr-only: auto-detected but not-ready herdr stays herdr and fails loud (never silent tmux)"
+}
+
+# The explicit opt-outs still win, so running cooks in tmux stays possible - but
+# only deliberately, never as a silent side effect of an unready herdr.
+test_herdr_unready_explicit_tmux_opt_out() {
+  command -v jq >/dev/null 2>&1 || { echo "skip: jq not found"; return 0; }
+  local d fakebin out
+  d=$(casedir herdr-optout)
+  mkdir -p "$d/config"
+  fakebin=$(sc_fakebin "$d")
+  make_unready_herdr "$fakebin"
+  printf 'tmux\n' > "$d/config/backend"
+  out=$( TMUX='' HERDR_ENV=1 PATH="$fakebin:$PATH" SC_CONFIG_OVERRIDE="$d/config" in_fresh_backend 'sc_backend_name 2>/dev/null' )
+  [ "$out" = tmux ] || fail "config/backend=tmux must opt out even under herdr, got '$out'"
+  rm -f "$d/config/backend"
+  out=$( TMUX='' HERDR_ENV=1 SC_BACKEND=tmux PATH="$fakebin:$PATH" SC_CONFIG_OVERRIDE="$d/config" in_fresh_backend 'sc_backend_name 2>/dev/null' )
+  [ "$out" = tmux ] || fail "SC_BACKEND=tmux must opt out even under herdr, got '$out'"
+  pass "herdr-only: config/backend=tmux and SC_BACKEND=tmux still opt out under herdr"
 }
 
 # --- compatibility contract & meta helpers ----------------------------------
@@ -378,7 +405,8 @@ test_config_selects
 test_config_blank_lines_ignored
 test_tmux_default_when_nothing_set
 test_tmux_autodetect
-test_herdr_autodetect_falls_back_when_not_ready
+test_herdr_autodetect_stays_herdr_when_not_ready
+test_herdr_unready_explicit_tmux_opt_out
 test_meta_default_is_tmux
 test_meta_explicit_backend
 test_resolve_explicit_target_passthrough

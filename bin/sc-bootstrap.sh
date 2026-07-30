@@ -42,10 +42,11 @@
 #          Detect-only mode for callers without verified session-lock ownership
 #          (bin/sc-session-start.sh): the read-only diagnostics (missing tools,
 #          gh auth, the worktree-tangle check, harness override, dispatch
-#          validation) still run, but the three MUTATING sweeps - the local
-#          secondmate fast-forward sync, the secondmate liveness sweep, and the
-#          fleet refresh - are skipped so an unlocked session never touches
-#          shared mutable state. Default unset/0 = unchanged full behavior.
+#          validation) still run, but the MUTATING steps - the local recovery
+#          permission-allow-list seed, the local secondmate fast-forward sync, the
+#          secondmate liveness sweep, and the fleet refresh - are skipped so an
+#          unlocked session never touches mutable state. Default unset/0 =
+#          unchanged full behavior.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -345,8 +346,16 @@ crew=
 [ -f "$CONFIG/crew-harness" ] && crew=$(tr -d '[:space:]' < "$CONFIG/crew-harness" || true)
 [ -n "$crew" ] && [ "$crew" != "default" ] && echo "CREW_HARNESS_OVERRIDE: $crew"
 crew_dispatch_validate
-# The three mutating sweeps run only outside detect-only mode (see header).
+# The mutating steps run only outside detect-only mode (see header).
 if [ "${SC_BOOTSTRAP_DETECT_ONLY:-0}" != 1 ]; then
+  # Seed this home's LOCAL recovery/operational permission allow-list so a harness
+  # auto-mode permission classifier can never wedge souschef out of recovery (the
+  # deadlock this closes). Idempotent, non-destructive, and best-effort: a failure
+  # here never blocks startup. Runs for the main home AND every secondmate home
+  # (each runs bootstrap in its own SC_HOME). See bin/sc-seed-permissions.sh.
+  if [ -x "$SCRIPT_DIR/sc-seed-permissions.sh" ]; then
+    "$SCRIPT_DIR/sc-seed-permissions.sh" >/dev/null 2>&1 || true
+  fi
   secondmate_sync
   secondmate_liveness_sweep
   fleet_sync
