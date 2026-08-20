@@ -10,6 +10,13 @@ Use this reference before creating, seeding, validating, handing backlog to, rec
 
 Keep the always-inline routing rules in `AGENTS.md` authoritative: route by natural-language `scope:`, local-only projects stay with the main Chef, and station chefs are idle by default.
 
+## Idle-by-default contract
+
+A station chef is idle by default: it acts only on work the main Chef routes to it.
+On startup and restart it runs bootstrap and recovery solely to reconcile work that is already its own - in-flight cooks, tracked backlog items, and durable watches in its home - and then waits silently for routed work.
+It must never fire a survey, audit, or self-directed "find improvements" ticket on its own initiative; an empty queue is a healthy resting state, not a cue to invent work.
+This contract is encoded in the charter brief (below and AGENTS.md section 11), so it travels with the live station chef as well as living here.
+
 ## Routing table
 
 `data/secondmates.md` has one line per persistent domain expediter:

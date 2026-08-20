@@ -198,10 +198,8 @@ The `scope:` field is used during intake; the `projects:` field is a non-exclusi
 Load `station-chef-provisioning` before creating, seeding, validating, handing backlog to, recovering, or retiring a station chef home, and before editing `data/secondmates.md`.
 That reference owns home leases, transactional rollback, validation, project clone restrictions, handoff edge cases, charter copy rules, and 86 internals.
 
-A station chef is idle by default: it acts only on work the main Chef routes to it.
-On startup and restart it runs bootstrap and recovery solely to reconcile work that is already its own - in-flight cooks, tracked backlog items, and durable watches in its home - and then waits silently for routed work.
-It must never fire a survey, audit, or self-directed "find improvements" ticket on its own initiative; an empty queue is a healthy resting state, not a cue to invent work.
-This idle contract is encoded in the charter brief (section 11), so it travels with the live station chef as well as living here.
+A station chef is idle by default: it acts only on work the main Chef routes to it, reconciling only its own in-flight work on restart and then waiting silently - it must never fire a survey, audit, or self-directed ticket on its own initiative, and an empty queue is a healthy resting state, not a cue to invent work.
+This idle contract travels in the charter brief (section 11); its full form is owned by `station-chef-provisioning`.
 
 **Hand off in-scope backlog on creation.**
 When a station chef is created for a domain, the existing main-backlog items that fall under its scope should become its work instead of staying stranded in the main backlog.
@@ -342,12 +340,11 @@ Call a station chef the same way: its charter retargets escalation to the main C
 A service ticket's path from `done` to landed on `main` is set by the project's `mode` (recorded in meta; section 6); `yolo` decides who approves. The cook validates its own change locally before reporting `done` - there is no Chef-driven validation pipeline. The two modes diverge at the Hands and Service 86 stages below:
 
 - **direct-PR** (default) - the cook validates locally (lint/format/type/test green), pushes, and opens the PR itself (its brief says so), reporting `done: PR <url>`. Go straight to PR ready (run `sc-pr-check`, relay the PR). 86 uses the normal landed-work check.
-- **local-only** - no remote, no PR. The cook validates locally and stops at `done: ready in branch fm/<id>`. Review the diff with `bin/sc-review-diff.sh <id>`, relay a one-paragraph summary to the Chef, and on approval run `bin/sc-merge-local.sh <id>` to fast-forward local `main` (it refuses anything but a clean fast-forward - if it does, have the cook rebase). No `sc-pr-check`. Then 86, whose safety check requires the branch already merged into local `main`, OR the work pushed to any remote (a fork counts - relevant for upstream-contribution PRs on a local-only-registered project).
+- **local-only** - no remote, no PR: the cook stops at `done: ready in branch fm/<id>`, and Chef reviews the diff and merges to local `main` on approval. Load `delivery-and-ship` whenever a project's mode is `local-only`; it owns the diff-review + `bin/sc-merge-local.sh` mechanics and the local-only 86 safety check.
 
-When reviewing any cook branch diff, use `bin/sc-review-diff.sh <id>` rather than `git diff <default>...branch` directly.
-Pooled clones keep their local default refs frozen at clone time and can lag `origin`; the helper always compares against the authoritative base.
+When reviewing any cook branch diff, use `bin/sc-review-diff.sh <id>` rather than `git diff <default>...branch` directly: pooled clones keep their local default refs frozen at clone time and can lag `origin`, and the helper always compares against the authoritative base.
 
-**Ship the project's way (`bin/sc-ship.sh <id>`).** Different projects land PRs differently, so never assume one merge command. `bin/sc-ship.sh <id>` is the single ship entry point: it auto-detects the PR base branch's merge mechanism and uses the right one - **enqueue** into a GitHub merge queue (via GraphQL `enqueuePullRequest`) when the base branch has one, a plain `gh pr merge --squash --delete-branch` when it does not, or a local fast-forward (delegating to `bin/sc-merge-local.sh`) for `local-only`. Detection queries `Repository.mergeQueue(branch:)` - no per-repo config; an optional `ship=<queue|squash|local>` token inside the project's registry bracket can pin it if ever needed. It ships only a GREEN PR (open, not draft, checks passing) and NEVER uses `--admin` or bypasses branch protection - a queue-protected PR is enqueued, never force-merged. Enqueuing counts as shipping: it prints `queued ... position N`, and `sc-pr-check`'s poll still detects the eventual merge for teardown. This does not relax prime directives: run it only on the Chef's explicit word or under `yolo` (below).
+**Ship the project's way (`bin/sc-ship.sh <id>`).** Never assume one merge command. `bin/sc-ship.sh <id>` is the single ship entry point and auto-detects the base branch's merge mechanism (merge-queue enqueue, plain squash, or local fast-forward for `local-only`). It ships only a GREEN PR (open, not draft, checks passing) and NEVER uses `--admin` or bypasses branch protection; enqueuing counts as shipping and `sc-pr-check`'s poll still detects the eventual merge. This does not relax prime directives: run it only on the Chef's explicit word or under `yolo` (below). Before running it on a queue-protected base, load `delivery-and-ship` for the enqueue and detection detail.
 
 **yolo (orthogonal).** With `yolo=off` (default) every approval is the Chef's: ask-user findings, PR merges, the local-only merge. With `yolo=on`, Chef makes those calls itself without asking - resolve ask-user findings on your judgment, and run `bin/sc-ship.sh <id>` once the work is green/approved (it auto-picks the merge mechanism) - EXCEPT anything destructive, irreversible, or security-sensitive, which still escalates to the Chef. Never ship a red PR even under yolo. After any merge or enqueue you perform without asking the Chef, post a one-line "merged <full PR URL or local main> after checks passed" (or "queued <full PR URL> after checks passed") FYI so the Chef keeps a trail.
 
@@ -388,28 +385,17 @@ Then reconcile the backlog as in the auto path above: move the ticket to Done wi
 
 ### Station chef 86 (explicit only)
 
-A station chef is persistent by default.
-An empty queue is healthy and does not trigger 86.
-Run `bin/sc-teardown.sh <id>` for `kind=secondmate` only when the Chef or main Chef explicitly decides to retire that persistent expediter.
-Load `station-chef-provisioning` before retiring it.
-The safety check is the station chef's own home: 86 refuses while its `state/*.meta` contains in-flight work.
-With `--force`, 86 is the explicit discard path for child windows, child work, state, route, lease, and home; never use it unless the Chef explicitly said to discard the work.
+A station chef is persistent by default; an empty queue is healthy and does not trigger 86.
+Retire one with `bin/sc-teardown.sh <id>` (for `kind=secondmate`) only when the Chef or main Chef explicitly decides to - it refuses while the station chef's own home holds in-flight work, and `--force` (the explicit discard path) is never used unless the Chef said to discard the work.
+Load `station-chef-provisioning` before retiring one; it owns the 86 internals.
 
 ### Prep tickets (tasting notes instead of PR)
 
-A prep ticket follows Intake, Fire, and Expedite exactly as above - scaffold the brief with `bin/sc-brief.sh <id> <repo> --scout`, fire with `--scout` - then diverges after the work:
-
-- There is no Validate or PR-ready stage. When the cook's status says `done`, read `data/<id>/report.md`.
-- Load `decision-inventory` before relaying the report and before any 86 or promote: every unresolved Chef decision the report surfaces must become an `## Open decisions` ledger row (plus a keyed `needs-decision [key=...]:` status line as the second durable copy) before the ticket may be treated as complete, and the Done note records the inventoried keys or an explicit "none". A decision living only in report prose is a decision waiting to be dropped.
-- Relay the findings to the Chef: plain chat for a focused answer, a short markdown summary when the tasting notes have structure worth laying out (multiple findings, options, a plan).
-- **Hold the cook warm - do not 86 on `done`.** A prep cook's value is its loaded context - the files it read, the repro it built, its chain of reasoning - and a teardown destroys all of that, while the report (which lives in `data/<id>/`, outside the worktree) survives 86 either way. So after relaying, leave the window and worktree alive and tell the Chef the cook is held open for follow-up questions and deeper dives against that warm context. Mark the held state in the ticket's meta so the pass stops treating the now-idle pane as stale: `echo held=warm >> state/<id>.meta` (the pass skips stale-pane wakes for a `held=warm` window, exactly as it does for a station chef; see section 8). A held-warm prep cook idling at its report is a healthy resting state, not a wedged one.
-- **86 or promote only on an explicit signal.** When the Chef signals the line of inquiry is done, 86 it: `bin/sc-teardown.sh <id>` allows a prep worktree's scratch commits and dirty files once the tasting notes exist (it refuses without them, because the findings are the work product). When the findings reveal serviceable work the Chef wants served, promote it in place instead (Promotion, below); promotion clears the `held=warm` marker so the now-active ship cook is supervised normally.
-- Keep the ticket under `## In flight` while the cook is held warm (it is still live); do not move it to Done at `done`. Only on the real 86 do you record it in Done with the tasting-notes path instead of a PR link by hand-editing `data/backlog.md` and keeping Done to the 10 most recent, then re-evaluate the queue and fire only queued work whose blockers are gone and whose time/date gate, if any, has arrived.
-
-**Promotion.** When a prep's findings reveal serviceable work (a reproduced bug with a clear fix) and the Chef wants it served, promote the ticket in place instead of re-firing: run `bin/sc-promote.sh <id>` (flips `kind=` to ship in meta, restoring 86's full protection, and clears any `held=warm` marker so the now-active cook is supervised normally), then send the cook its service instructions - inventory scratch state, reset to a clean default-branch base, carry over only intended fix changes, create branch `fm/<id>`, implement, and report `done` according to the project's delivery mode.
-The cook keeps its worktree, loaded context, and repro, but the service branch must start from a clean base with only intended changes; scratch commits and debug edits from the prep phase never ride along.
-The repro becomes the regression test.
-From there the ticket is an ordinary service ticket through its mode-specific validation, PR or local merge, and 86.
+A prep ticket follows Intake, Fire, and Expedite as above (scaffold with `bin/sc-brief.sh <id> <repo> --scout`, fire with `--scout`); its deliverable is a report at `data/<id>/report.md`, never a PR, and that report lives outside the worktree so it survives 86.
+**Never 86 a prep cook on `done` - hold it warm, and 86 or promote only on the Chef's explicit signal.**
+The full lifecycle after the work (hold-warm, the `held=warm` stale-skip marker, 86-vs-promote, and promotion mechanics) is owned by `prep-ticket-lifecycle`: load it before firing a prep/scout ticket and when any `kind=scout` ticket reports `done`, before 86ing or promoting it.
+Decision capture stays with `decision-inventory`: load it before relaying the report and before any 86 or promote, so every unresolved Chef decision the report surfaces becomes an `## Open decisions` row before the ticket is treated as complete.
+Keep the ticket under `## In flight` while the cook is held warm; move it to Done only on the real 86, recording the `data/<id>/report.md` path instead of a PR link, then re-evaluate the queue.
 
 ## 8. Expediting protocol
 
@@ -618,4 +604,6 @@ These skills are not Chef-invocable; they are conditional operating references y
 - `harness-adapters` - load before firing or recovering a cook or station chef, handling a trust dialog, sending a harness-specific skill invocation, interrupting or exiting an agent, resuming an exited agent, or verifying a new harness adapter.
 - `stuck-cook-recovery` - load after a stale wake, looping pane, repeated confusion, an answered-by-brief question, an unresponsive cook, or a failed call.
 - `station-chef-provisioning` - load before creating, seeding, validating, recovering, handing backlog to, or retiring a station chef home, and before editing `data/secondmates.md`.
+- `prep-ticket-lifecycle` - load before firing a prep/scout ticket, and when any `kind=scout` ticket reports `done`, before 86ing or promoting it.
+- `delivery-and-ship` - load when a project's mode is `local-only`, or before running `bin/sc-ship.sh` on a queue-protected base.
 - `decision-inventory` - load before relaying a prep report to the Chef, before 86ing or promoting a prep ticket, and when recording or routing the Chef's answer to a report-discovered decision.
