@@ -15,6 +15,10 @@
 # A gh lookup error falls back to the content check; if that is also inconclusive,
 # teardown refuses rather than risk discarding unlanded work.
 # Uncommitted changes are never landed.
+# Known benign refusal: after an external-contribution PR, a squash merge leaves
+# the branch commits reachable only on the contributor's fork. Add the fork as a
+# remote and fetch, then retry - never reach for --force:
+#   git remote add fork <fork url> && git fetch fork
 # local-only projects additionally accept work merged into the local default
 # branch (souschef performs that merge on the captain's approval) as a fallback
 # for the common case where there is no remote at all.
